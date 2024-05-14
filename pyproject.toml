@@ -38,7 +38,7 @@ version = "0.1.0"  # REQUIRED, although can be dynamic
 # This is a one-line description or tagline of what your project does. This
 # corresponds to the "Summary" metadata field:
 # https://packaging.python.org/specifications/core-metadata/#summary
-description = "Data preparation utility for finetunign of OpenAI's Whisper model."
+description = "Data preparation utility for the finetuning of OpenAI's Whisper model."
 
 # This is an optional longer description of your project that represents
 # the body of text which users will see when they visit PyPI.
@@ -120,7 +120,6 @@ classifiers = [
 # For an analysis of this field vs pip's requirements files see:
 # https://packaging.python.org/discussions/install-requires-vs-requirements/
 dependencies = [
-  "peppercorn"
 ]
 
 # List additional groups of dependencies here (e.g. development
@@ -154,4 +153,4 @@ test = ["coverage"]
 # The following would provide a command line executable called `sample`
 # which executes the function `main` from this package when invoked.
 [project.scripts]
-sample = "whisper_prep:main"
+whisper_prep = "whisper_prep:main"
