@@ -40,7 +40,7 @@ TODO
 <!-- CONTACT -->
 ## Contact
 
-Vincenozo Timmel - vincenzo.timmel@fhnw.ch
+Vincenzo Timmel - vincenzo.timmel@fhnw.ch
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
