@@ -4,6 +4,7 @@ from typing import Union
 
 import pandas as pd
 from datasets import Audio, Dataset, DatasetDict
+from tqdm import tqdm
 
 
 def ljson_to_dataframe(json_path: Union[str, Path]) -> pd.DataFrame:
@@ -34,3 +35,27 @@ def ljson_to_hf_dataset(
 
     dataset = dataset.cast_column("audio", Audio(sampling_rate=16000))
     return dataset
+
+
+def combine_tsvs_to_dataframe(
+    tsv_paths: list[Union[str, Path]], clips_folders: list[Union[str, Path]]
+) -> pd.DataFrame:
+    combined_dataset = []
+
+    for dataset_tsv_path, clips_folder in zip(tsv_paths, clips_folders):
+        data = pd.read_csv(dataset_tsv_path, sep="\t", header=0)
+
+        for row in tqdm(pd.DataFrame.itertuples(data), total=len(data)):
+            sentence = row["sentence"]
+            sample_path = row["path"] if hasattr(row, "path") else row["clip_path"]
+            audio_file_path = Path(clips_folder, sample_path)
+
+            client_id = "0"
+            if hasattr(row, "client_id"):
+                client_id = row["client_id"]
+
+            combined_dataset.append((sentence, audio_file_path, client_id))
+
+    return pd.DataFrame(
+        data=combined_dataset, columns=["sentence", "audio_file_path", "client_id"]
+    )
