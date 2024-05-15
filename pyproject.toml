@@ -121,7 +121,8 @@ classifiers = [
 # https://packaging.python.org/discussions/install-requires-vs-requirements/
 dependencies = [
   "pydub",
-  "webrtcvad"
+  "webrtcvad",
+  "datasets"
 ]
 
 # List additional groups of dependencies here (e.g. development
