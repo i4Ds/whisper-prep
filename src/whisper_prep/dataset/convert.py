@@ -38,12 +38,19 @@ def ljson_to_hf_dataset(
 
 
 def combine_tsvs_to_dataframe(
-    tsv_paths: list[Union[str, Path]], clips_folders: list[Union[str, Path]]
+    tsv_paths: list[Union[str, Path]],
+    clips_folders: list[Union[str, Path]],
+    partials: list[float],
 ) -> pd.DataFrame:
     combined_dataset = []
 
-    for dataset_tsv_path, clips_folder in zip(tsv_paths, clips_folders):
+    for dataset_tsv_path, clips_folder, partial in zip(
+        tsv_paths, clips_folders, partials
+    ):
         data = pd.read_csv(dataset_tsv_path, sep="\t", header=0)
+
+        if partial < 1.0:
+            data = data.sample(frac=partial)
 
         for row in tqdm(pd.DataFrame.itertuples(data), total=len(data)):
             sentence = row["sentence"]
