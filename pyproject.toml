@@ -122,7 +122,8 @@ classifiers = [
 dependencies = [
   "pydub",
   "webrtcvad",
-  "datasets"
+  "datasets",
+  "soundfile"
 ]
 
 # List additional groups of dependencies here (e.g. development
