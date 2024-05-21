@@ -252,18 +252,18 @@ def generate_fold(
             _execute_parallel_process(generate_, constructed_samples, n_jobs)
             constructed_samples = []
 
-        # Add the last sequence if it is not empty
-        if len(sequence) > 0:
-            constructed_samples.append(sequence)
+    # Add the last sequence if it is not empty
+    if len(sequence) > 0:
+        constructed_samples.append(sequence)
 
-        generate_ = partial(
-            _generate_wrapper,
-            audios_folder=audios_folder,
-            transcripts_folder=transcripts_folder,
-            overlap_chance=overlap_chance,
-            max_overlap_chance=max_overlap_chance,
-            audio_format=audio_format,
-        )
+    generate_ = partial(
+        _generate_wrapper,
+        audios_folder=audios_folder,
+        transcripts_folder=transcripts_folder,
+        overlap_chance=overlap_chance,
+        max_overlap_chance=max_overlap_chance,
+        audio_format=audio_format,
+    )
 
-        # Parallel execution with progress tracking
-        _execute_parallel_process(generate_, constructed_samples, n_jobs)
+    # Parallel execution with progress tracking
+    _execute_parallel_process(generate_, constructed_samples, n_jobs)

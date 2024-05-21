@@ -123,7 +123,8 @@ dependencies = [
   "pydub",
   "webrtcvad",
   "datasets",
-  "soundfile"
+  "soundfile",
+  "openai-whisper"
 ]
 
 # List additional groups of dependencies here (e.g. development
