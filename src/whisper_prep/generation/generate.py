@@ -15,7 +15,7 @@ from whisper_prep.dataset.convert import combine_tsvs_to_dataframe
 from whisper_prep.subtitling.srt import Caption, generate_srt
 
 
-def _get_number_of_rows(speaker_groups):
+def _get_number_of_rows(speaker_groups) -> int:
     return sum(len(data) for _, data in speaker_groups.items())
 
 
@@ -33,17 +33,15 @@ def _generate_wrapper(
     sample: dict,
     audios_folder: Union[Path, str],
     transcripts_folder: Union[Path, str],
-    vad_detector: VoiceActivityDetector,
     overlap_chance: float,
     max_overlap_chance: float,
     audio_format: str,
-):
+) -> None:
     try:
         return _generate(
             constructed_samples=sample,
             audios_folder=audios_folder,
             transcripts_folder=transcripts_folder,
-            vad_detector=vad_detector,
             overlap_chance=overlap_chance,
             max_overlap_chance=max_overlap_chance,
             audio_format=audio_format,
@@ -53,7 +51,7 @@ def _generate_wrapper(
         return None
 
 
-def _execute_parallel_process(func, args, n_jobs: int):
+def _execute_parallel_process(func, args, n_jobs: int) -> list:
     with Pool(n_jobs) as executor:
         results = list(tqdm(executor.imap_unordered(func, args), total=len(args)))
     return results
@@ -63,17 +61,24 @@ def _generate(
     constructed_samples: list[dict],
     audios_folder: Union[Path, str],
     transcripts_folder,
-    vad_detector: VoiceActivityDetector,
     overlap_chance: float,
     max_overlap_chance: float,
     audio_format: str = "mp3",
-):
+) -> None:
     offset = 0
     current_seg_dur = 0
     current_seg_start = None
     combined_text = ""
     combined_audio = AudioSegment.empty()
     captions = []
+
+    vad_detector = VoiceActivityDetector(
+        aggressiveness=2,
+        frame_duration_ms=30,
+        padding_duration_ms=200,
+        rate_voiced_frames_threshold=0.95,
+        rate_unvoiced_frames_threshold=0.95,
+    )
 
     for i, segment in enumerate(constructed_samples):
         audio_file_path = segment["path"]
@@ -162,6 +167,9 @@ def generate_fold(
     out_folder: Union[str, Path],
     maintain_speaker_chance: float,
     n_samples_per_srt: int,
+    overlap_chance: float,
+    max_overlap_chance: float,
+    audio_format: str,
     n_jobs: int,
     seed: int = 1,
 ) -> None:
@@ -175,14 +183,6 @@ def generate_fold(
     audios_folder.mkdir(parents=True, exist_ok=True)
     transcripts_folder = Path(out_folder, "transcripts")
     transcripts_folder.mkdir(parents=True, exist_ok=True)
-
-    vad_detector = VoiceActivityDetector(
-        aggressiveness=2,
-        frame_duration_ms=30,
-        padding_duration_ms=200,
-        rate_voiced_frames_threshold=0.95,
-        rate_unvoiced_frames_threshold=0.95,
-    )
 
     # Shuffle the dataset
     data = data.sample(frac=1, random_state=seed)
@@ -245,7 +245,9 @@ def generate_fold(
                 _generate_wrapper,
                 audios_folder=audios_folder,
                 transcripts_folder=transcripts_folder,
-                vad_detector=vad_detector,
+                overlap_chance=overlap_chance,
+                max_overlap_chance=max_overlap_chance,
+                audio_format=audio_format,
             )
 
             # Parallel execution with progress tracking
@@ -260,6 +262,9 @@ def generate_fold(
             _generate_wrapper,
             audios_folder=audios_folder,
             transcripts_folder=transcripts_folder,
+            overlap_chance=overlap_chance,
+            max_overlap_chance=max_overlap_chance,
+            audio_format=audio_format,
         )
 
         # Parallel execution with progress tracking

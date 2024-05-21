@@ -50,13 +50,13 @@ def combine_tsvs_to_dataframe(
             data = data.sample(frac=partial)
 
         for row in tqdm(pd.DataFrame.itertuples(data), total=len(data)):
-            sentence = row["sentence"]
-            sample_path = row["path"] if hasattr(row, "path") else row["clip_path"]
+            sentence = row.sentence
+            sample_path = row.path if hasattr(row, "path") else row.clip_path
             audio_file_path = Path(clips_folder, sample_path)
 
             client_id = "0"
             if hasattr(row, "client_id"):
-                client_id = row["client_id"]
+                client_id = row.client_id
 
             combined_dataset.append((sentence, audio_file_path, client_id))
 
