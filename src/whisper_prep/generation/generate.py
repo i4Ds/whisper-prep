@@ -177,8 +177,6 @@ def generate_fold(
 
     Path(out_folder).mkdir(parents=True, exist_ok=True)
 
-    logs_folder = Path(out_folder, "logs")
-    logs_folder.mkdir(parents=True, exist_ok=True)
     audios_folder = Path(out_folder, "audios")
     audios_folder.mkdir(parents=True, exist_ok=True)
     transcripts_folder = Path(out_folder, "transcripts")
