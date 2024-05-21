@@ -25,11 +25,6 @@ def ljson_to_hf_dataset(
     train_meta_file = ljson_to_dataframe(json_path)
     train_meta_file.rename(columns={"audio_path": "audio"}, inplace=True)
 
-    # TODO: Check why, at least make it a parameter
-    train_meta_file["audio"] = train_meta_file.audio.apply(
-        lambda x: x.replace(".wav", ".mp3")
-    )
-
     dataset_train = Dataset.from_pandas(train_meta_file)
 
     dataset = DatasetDict()

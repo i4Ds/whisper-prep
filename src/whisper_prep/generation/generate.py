@@ -207,7 +207,6 @@ def generate_fold(
             filtered_speaker = speaker_groups[last_speaker]
             # Choose a segment from the same speaker if available
             if len(filtered_speaker) > 0:
-                # TODO: Check is this random?
                 sample = filtered_speaker.iloc[0]
                 # If no segment from the same speaker, choose from any available segments
             else:
