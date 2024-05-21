@@ -1,8 +1,8 @@
-from typing import Deque, Optional, List, Union
-from pathlib import Path
-from collections import deque
-import unicodedata
 import json
+import unicodedata
+from collections import deque
+from pathlib import Path
+from typing import Deque, List, Optional, Union
 
 import torch
 import torchaudio
@@ -11,7 +11,7 @@ from whisper.audio import load_audio
 from whisper.tokenizer import LANGUAGES, TO_LANGUAGE_CODE, get_tokenizer
 from whisper.utils import format_timestamp
 
-from whisper_prep.generation.typing import Utterance, Record, PromptNode
+from whisper_prep.generation.typing import PromptNode, Record, Utterance
 
 DURATION = 30000  # 30 seconds in milliseconds
 SAMPLE_RATE = 16000

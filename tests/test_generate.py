@@ -1,6 +1,6 @@
-from pathlib import Path
 import shutil
 import unittest
+from pathlib import Path
 
 from whisper_prep.generation.data_processor import DataProcessor
 from whisper_prep.generation.generate import generate_fold

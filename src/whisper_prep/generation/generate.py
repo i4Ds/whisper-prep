@@ -81,21 +81,21 @@ def _generate(
     )
 
     # Logic helper to check for the next speaker_id
-    speaker_ids = [x['speaker_id'] for x in constructed_samples]
+    speaker_ids = [x["speaker_id"] for x in constructed_samples]
     speaker_ids.append(None)
 
     for i, segment in enumerate(constructed_samples):
         audio_file_path = segment["path"]
         sentence = segment["sentence"]
-        next_speaker = speaker_ids[i+1]
+        next_speaker = speaker_ids[i + 1]
         curr_speaker = speaker_ids[i]
         audio_segment = read_audio(audio_file_path, resample_rate=16000)
         audio_duration_seconds = audio_segment.duration_seconds
         current_seg_dur += audio_duration_seconds
 
         # Determine start and end seconds using Voice Activity Detection (VAD)
-        start_second, end_second = vad_detector.vad_collector(
-            raw_data=audio_segment.raw_data, sample_rate=audio_segment.frame_rate
+        start_second, end_second = vad_detector.return_start_end_of_audio(
+            audio=audio_segment, sample_rate=audio_segment.frame_rate
         )
 
         if end_second is None:
@@ -141,7 +141,9 @@ def _generate(
             current_seg_start = start_second - overlap_move + offset
         # Create and add captions for each segment
         # If the netflix rules are reached or the next speaker is not the same, fuse captions.
-        if (len(combined_text) > 1000 or current_seg_dur > 15) or next_speaker != curr_speaker:
+        if (
+            len(combined_text) > 1000 or current_seg_dur > 15
+        ) or next_speaker != curr_speaker:
             caption = Caption(
                 start_second=current_seg_start,
                 end_second=offset + end_second - overlap_move,
@@ -231,7 +233,13 @@ def generate_fold(
         speaker_groups[last_speaker] = speaker_groups[last_speaker].iloc[1:]
 
         # Add the chosen sample to the sequence
-        sequence.append({"path": audio_file_path, "sentence": sentence, "speaker_id": sample["client_id"]})
+        sequence.append(
+            {
+                "path": audio_file_path,
+                "sentence": sentence,
+                "speaker_id": sample["client_id"],
+            }
+        )
 
         # Check if the limit of samples has been reached
         if n_samples_picked >= n_samples_per_srt:

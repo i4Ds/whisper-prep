@@ -1,9 +1,11 @@
 import collections
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Iterator, List, Tuple, Union
 
+import torch
+import torchaudio
 from webrtcvad import Vad
-
+import numpy as np
 
 @dataclass
 class Frame:
@@ -40,9 +42,9 @@ class VoiceActivityDetector:
             timestamp += duration
             offset += n
 
-    def vad_collector(
+    def return_start_end_of_audio(
         self,
-        raw_data: bytes,
+        audio: np.array,
         sample_rate: int,
     ) -> tuple[float, float]:
         ring_buffer = collections.deque(maxlen=self.num_padding_frames)
@@ -50,6 +52,9 @@ class VoiceActivityDetector:
 
         start_second = None
         end_second = None
+
+        # Get raw data
+        raw_data = audio.raw_data
 
         for frame in self.frame_generator(raw_data, sample_rate):
             is_speech = self.vad.is_speech(frame.bytes, sample_rate)
@@ -84,3 +89,40 @@ class VoiceActivityDetector:
             start_second = 0
 
         return start_second, end_second
+
+
+class VADSilero:
+    def __init__(
+        self,
+        model_repo: str = "snakers4/silero-vad",
+        model_name: str = "silero_vad",
+        force_reload: bool = True,
+    ):
+        self.model, self.utils = torch.hub.load(
+            repo_or_dir=model_repo, model=model_name, force_reload=force_reload
+        )
+        self.get_speech_timestamps = self.utils[0]
+
+    def return_start_end_of_audio(
+        self, audio: Union[str, np.array], sample_rate: int = 16000
+    ) -> Tuple[float, float]:
+        list_start_ends = self.return_speech_timestamps(audio, sample_rate)
+        return list_start_ends[0]['start'], list_start_ends[-1]['end']
+
+    def return_speech_timestamps(
+        self, audio: Union[str, np.array], sample_rate: int = 16000
+    ) -> List[Tuple[float, float]]:
+        if isinstance(audio, str):
+            wav, aud_sr = torchaudio.load(audio)
+            wav = torchaudio.functional.resample(
+                wav, orig_freq=aud_sr, new_freq=sample_rate
+            )
+            wav = torch.mean(wav, dim=0)
+        else:
+            wav, sample_rate = torch.from_numpy(audio), sample_rate
+
+        # get speech timestamps from full audio file
+        speech_timestamps = self.get_speech_timestamps(
+            wav, self.model, sampling_rate=sample_rate, return_seconds=True
+        )
+        return [(ts["start"], ts["end"]) for ts in speech_timestamps]
