@@ -142,7 +142,7 @@ def _generate(
         # Create and add captions for each segment
         # If the netflix rules are reached or the next speaker is not the same, fuse captions.
         if (
-            len(combined_text) > 1000 or current_seg_dur > 15
+            len(combined_text) > 42 or current_seg_dur > 7
         ) or next_speaker != curr_speaker:
             caption = Caption(
                 start_second=current_seg_start,

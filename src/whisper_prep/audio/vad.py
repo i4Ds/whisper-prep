@@ -2,10 +2,11 @@ import collections
 from dataclasses import dataclass
 from typing import Iterator, List, Tuple, Union
 
+import numpy as np
 import torch
 import torchaudio
 from webrtcvad import Vad
-import numpy as np
+
 
 @dataclass
 class Frame:
@@ -107,7 +108,7 @@ class VADSilero:
         self, audio: Union[str, np.array], sample_rate: int = 16000
     ) -> Tuple[float, float]:
         list_start_ends = self.return_speech_timestamps(audio, sample_rate)
-        return list_start_ends[0]['start'], list_start_ends[-1]['end']
+        return list_start_ends[0]["start"], list_start_ends[-1]["end"]
 
     def return_speech_timestamps(
         self, audio: Union[str, np.array], sample_rate: int = 16000
