@@ -83,6 +83,7 @@ def _generate(
     for i, segment in enumerate(constructed_samples):
         audio_file_path = segment["path"]
         sentence = segment["sentence"]
+        speaker_kept = segment["speaker_kept"]
 
         audio_segment = read_audio(audio_file_path, resample_rate=16000)
         audio_duration_seconds = audio_segment.duration_seconds
@@ -135,7 +136,21 @@ def _generate(
         if not current_seg_start:
             current_seg_start = start_second - overlap_move + offset
         # Create and add captions for each segment
-        if len(combined_text) > 42 or current_seg_dur > 7:
+        # TODO: Only do if speaker is the same
+        if speaker_kept:
+            if len(combined_text) > 42 or current_seg_dur > 7:
+                caption = Caption(
+                    start_second=current_seg_start,
+                    end_second=offset + end_second - overlap_move,
+                    text=combined_text,
+                )
+                captions.append(caption)
+                current_seg_start = None
+                combined_text = None
+                current_seg_dur = 0
+            else:
+                start_second = start_second - overlap_move
+        else:
             caption = Caption(
                 start_second=current_seg_start,
                 end_second=offset + end_second - overlap_move,
@@ -145,8 +160,6 @@ def _generate(
             current_seg_start = None
             combined_text = None
             current_seg_dur = 0
-        else:
-            start_second = start_second - overlap_move
 
         offset += audio_segment.duration_seconds - overlap_move
         space_before_seconds = audio_duration_seconds - end_second
@@ -206,6 +219,8 @@ def generate_fold(
             # Choose a segment from the same speaker if available
             if len(filtered_speaker) > 0:
                 sample = filtered_speaker.iloc[0]
+                if len(sequence) > 0:
+                    sequence[-1]["speaker_kept"] = True
                 # If no segment from the same speaker, choose from any available segments
             else:
                 sample = _return_random_example(speaker_groups)
@@ -225,7 +240,13 @@ def generate_fold(
         speaker_groups[last_speaker] = speaker_groups[last_speaker].iloc[1:]
 
         # Add the chosen sample to the sequence
-        sequence.append({"path": audio_file_path, "sentence": sentence})
+        sequence.append(
+            {
+                "path": audio_file_path,
+                "sentence": sentence,
+                "speaker_kept": False,
+            }
+        )
 
         # Check if the limit of samples has been reached
         if n_samples_picked >= n_samples_per_srt:

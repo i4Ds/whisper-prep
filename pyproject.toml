@@ -124,7 +124,8 @@ dependencies = [
   "webrtcvad",
   "datasets",
   "soundfile",
-  "openai-whisper"
+  "openai-whisper",
+  "torchaudio"
 ]
 
 # List additional groups of dependencies here (e.g. development
