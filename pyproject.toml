@@ -125,7 +125,8 @@ dependencies = [
   "datasets",
   "soundfile",
   "openai-whisper",
-  "torchaudio"
+  "torchaudio",
+  "pyyaml"
 ]
 
 # List additional groups of dependencies here (e.g. development

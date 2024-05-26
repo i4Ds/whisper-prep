@@ -1,0 +1,13 @@
+dataset_name: example
+split_name: train
+out_folder: "tests/assets/out"
+data_sources:
+  - { type: tsv, tsv_path: "tests/assets/tsv-data-example/export_20211220_sample_10utterances copy.tsv", clips_folder: "tests/assets/tsv-data-example/clips", partial: 1.0 }
+generate_config:
+  maintain_speaker_chance: 0.5
+  n_samples_per_srt: 16
+  overlap_chance: 0.6
+  max_overlap_chance: 0.2
+  audio_format: "mp3"
+  n_jobs: 2
+  seed: 42
