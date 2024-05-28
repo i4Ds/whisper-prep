@@ -32,43 +32,47 @@ def main():
     split_name = config["split_name"]
 
     out_folder = Path(out_folder_base, dataset_name)
-
     out_folder.mkdir(parents=True, exist_ok=True)
 
-    tsv_paths = [source["tsv_path"] for source in config["data_sources"]]
-    clips_folders = [source["clips_folder"] for source in config["data_sources"]]
-    partials = [source["partial"] for source in config["data_sources"]]
+    tsv_sources = [
+        source for source in config["data_sources"] if source["type"] == "tsv"
+    ]
 
-    generate_config = config["generate_config"]
+    if len(tsv_sources) > 0:
+        tsv_paths = [source["tsv_path"] for source in tsv_sources]
+        clips_folders = [source["clips_folder"] for source in tsv_sources]
+        partials = [source["partial"] for source in tsv_sources]
 
-    generate_fold(
-        tsv_paths=tsv_paths,
-        clips_folders=clips_folders,
-        partials=partials,
-        out_folder=out_folder,
-        **generate_config,
-    )
+        generate_config = config["generate_config"]
 
-    audio_dir = Path(out_folder, "audios")
-    transcript_dir = Path(out_folder, "transcripts")
+        generate_fold(
+            tsv_paths=tsv_paths,
+            clips_folders=clips_folders,
+            partials=partials,
+            out_folder=out_folder,
+            **generate_config,
+        )
 
-    output_dir = Path(out_folder, "created_dataset")
-    output_file = Path(output_dir, "data.ljson")
-    dump_dir = Path(output_dir, "dump")
+        audio_dir = Path(out_folder, "audios")
+        transcript_dir = Path(out_folder, "transcripts")
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = Path(out_folder, "created_dataset")
+        output_file = Path(output_dir, "data.ljson")
+        dump_dir = Path(output_dir, "dump")
 
-    data_processor = DataProcessor(
-        audio_dir=audio_dir,
-        transcript_dir=transcript_dir,
-        output=output_file,
-        dump_dir=dump_dir,
-    )
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-    data_processor.run()
+        data_processor = DataProcessor(
+            audio_dir=audio_dir,
+            transcript_dir=transcript_dir,
+            output=output_file,
+            dump_dir=dump_dir,
+        )
 
-    hf_dataset = ljson_to_hf_dataset(json_path=output_file, split_name=split_name)
+        data_processor.run()
 
-    hf_folder = Path(out_folder, "hf")
-    hf_folder.mkdir(parents=True, exist_ok=True)
-    hf_dataset.save_to_disk(str(hf_folder))
+        hf_dataset = ljson_to_hf_dataset(json_path=output_file, split_name=split_name)
+
+        hf_folder = Path(out_folder, "hf")
+        hf_folder.mkdir(parents=True, exist_ok=True)
+        hf_dataset.save_to_disk(str(hf_folder))
