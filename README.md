@@ -38,7 +38,7 @@ This package helps you to create training data for fine-tuning whisper from sent
 
 <!-- Guide -->
 ## Data Preparation Guide
-You can run `python main.py --config train.yaml" in the base path after installing this package to see how it works.
+You can run `python main.py --config train.yaml" in the base path after installing this package to see how it works. Of course, you can also adapt it or call deeper f
 
 1. **Data File (.tsv):**
    - Create a `.tsv` file with two required columns:
@@ -50,7 +50,7 @@ You can run `python main.py --config train.yaml" in the base path after installi
    - Set up a `.yaml` configuration file. An example can be found at `tests/assets/configs/test.yaml`.
 
 3. **Running the Generation Script:**
-   - Use the `generate_fold_from_yaml` function, inputting your `.yaml` file as a dictionary, to start generating data folds.
+   - Use the `main` function in `main.py`, inputting your `.yaml` file as a path, to start generating data folds.
 
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
