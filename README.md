@@ -32,10 +32,28 @@
 
 <!-- ABOUT THE PROJECT -->
 ## About The Project
-
-TODO
+This package helps you to create training data for fine-tuning whisper from sentences. 
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<!-- Guide -->
+## Data Preparation Guide
+
+1. **Data File (.tsv):**
+   - Create a `.tsv` file with two required columns:
+     - `path`: The relative path to the `.mp3` file.
+     - `sentence`: The text corresponding to the audio file.
+   - Optional: If a `client_id` is included, it can be used to increase the probability that following sentences are from the same speaker. Refer to `generate_fold` in `src/whisper_prep/generation/generate.py` for additional features.
+
+2. **Configuration File (.yaml):**
+   - Set up a `.yaml` configuration file. An example can be found at `tests/assets/configs/test.yaml`.
+
+3. **Running the Generation Script:**
+   - Use the `generate_fold_from_yaml` function, inputting your `.yaml` file as a dictionary, to start generating data folds.
+
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 
 <!-- CONTACT -->
 ## Contact

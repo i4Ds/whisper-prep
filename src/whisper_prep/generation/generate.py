@@ -1,6 +1,7 @@
 import random
 import uuid
 from functools import partial
+from inspect import signature
 from multiprocessing.pool import Pool
 from pathlib import Path
 from typing import Union
@@ -168,6 +169,20 @@ def _generate(
     generate_srt(captions, save_path_srt)
 
 
+def generate_fold_from_yaml(config: dict):
+    """See test.yaml in tests/assets/configs/test.yaml on the setup of the config."""
+    # Get the list of parameters accepted by generate_fold
+    generate_fold_params = signature(generate_fold).parameters
+
+    # Filter the flat_config to keep only the parameters that generate_fold accepts
+    filtered_config = {
+        k: v for k, v in config.items() if k in generate_fold_params
+    }
+
+    # Call generate_fold with the filtered configuration
+    generate_fold(**filtered_config)
+
+
 def generate_fold(
     tsv_paths: list[Union[str, Path]],
     clips_folders: list[Union[str, Path]],
@@ -178,8 +193,8 @@ def generate_fold(
     overlap_chance: float,
     max_overlap_chance: float,
     audio_format: str,
-    n_jobs: int,
-    seed: int = 1,
+    n_jobs: int = 2,
+    seed: int = 42,
 ) -> None:
     data = combine_tsvs_to_dataframe(tsv_paths, clips_folders, partials=partials)
 
@@ -251,7 +266,7 @@ def generate_fold(
             print(f"Constructed {len(constructed_samples)} SRTs.")
             print(f"Remaining samples: {remaining_samples}")
 
-        # If there are too many SRTs, the list is getting to big.
+        # If there are too many SRTs, the list is getting to big and append to list will come to a halt.
         if len(constructed_samples) > 1500:
             generate_ = partial(
                 _generate_wrapper,

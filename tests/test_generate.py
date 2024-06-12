@@ -2,8 +2,10 @@ import shutil
 import unittest
 from pathlib import Path
 
+import yaml
+
 from whisper_prep.generation.data_processor import DataProcessor
-from whisper_prep.generation.generate import generate_fold
+from whisper_prep.generation.generate import generate_fold, generate_fold_from_yaml
 
 
 class TestGenerate(unittest.TestCase):
@@ -13,28 +15,15 @@ class TestGenerate(unittest.TestCase):
         self.create()
 
     def generate(self):
-        tsv_paths = [
-            "tests/assets/tsv-data-example/export_20211220_sample_10utterances copy.tsv"
-        ]
-        clips_folders = ["tests/assets/tsv-data-example/clips"]
-        out_folder = "tests/assets/out/sample"
 
-        if Path(out_folder).exists():
-            shutil.rmtree(out_folder)
+        # Read YAML file
+        with open("tests/assets/configs/test.yaml", "r") as stream:
+            config = yaml.safe_load(stream)
 
-        generate_fold(
-            tsv_paths=tsv_paths,
-            clips_folders=clips_folders,
-            partials=[1.0],
-            out_folder=out_folder,
-            maintain_speaker_chance=0.5,
-            n_samples_per_srt=16,
-            overlap_chance=0.6,
-            max_overlap_chance=0.2,
-            audio_format="mp3",
-            n_jobs=2,
-            seed=42,
-        )
+        if Path(config["out_folder"]).exists():
+            shutil.rmtree(config["out_folder"])
+
+        generate_fold_from_yaml(config)
 
     def create(self):
         generate_folder = "tests/assets/out/sample"

@@ -93,6 +93,8 @@ class VoiceActivityDetector:
 
 
 class VADSilero:
+    """Very slow. Needs to be run in an Onnx-Instance."""
+
     def __init__(
         self,
         model_repo: str = "snakers4/silero-vad",
