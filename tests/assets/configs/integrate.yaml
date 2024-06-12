@@ -1,7 +1,7 @@
 # Names and paths
-dataset_name: test # E.g. STT or SDS
-split_name: test # Name of the split, e.g. Train.
-out_folder_base: "tests/assets/out/result"
+dataset_name: integration # E.g. STT or SDS
+split_name: train # Name of the split, e.g. Train.
+out_folder_base: "tests/assets/out/result/123"
 
 # Data Sources
 tsv_paths: ["tests/assets/tsv-data-example/export_20211220_sample_10utterances copy.tsv"]
