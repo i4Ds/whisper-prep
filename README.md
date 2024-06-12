@@ -38,6 +38,7 @@ This package helps you to create training data for fine-tuning whisper from sent
 
 <!-- Guide -->
 ## Data Preparation Guide
+You can run `python main.py --config train.yaml" in the base path after installing this package to see how it works.
 
 1. **Data File (.tsv):**
    - Create a `.tsv` file with two required columns:

@@ -175,9 +175,7 @@ def generate_fold_from_yaml(config: dict):
     generate_fold_params = signature(generate_fold).parameters
 
     # Filter the flat_config to keep only the parameters that generate_fold accepts
-    filtered_config = {
-        k: v for k, v in config.items() if k in generate_fold_params
-    }
+    filtered_config = {k: v for k, v in config.items() if k in generate_fold_params}
 
     # Call generate_fold with the filtered configuration
     generate_fold(**filtered_config)
@@ -192,10 +190,26 @@ def generate_fold(
     n_samples_per_srt: int,
     overlap_chance: float,
     max_overlap_chance: float,
-    audio_format: str,
-    n_jobs: int = 2,
+    audio_format: str = "mp3",
+    n_jobs: int = 4,
     seed: int = 42,
 ) -> None:
+    """
+    Generates a data fold for audio processing.
+
+    Parameters:
+    - tsv_paths (list[Union[str, Path]]): List of paths to the .tsv files containing audio metadata.
+    - clips_folders (list[Union[str, Path]]): List of folders where audio clips are stored.
+    - partials (list[float]): List of partial amounts to split the data.
+    - out_folder (Union[str, Path]): Output directory for the generated fold.
+    - maintain_speaker_chance (float): Probability of maintaining the same speaker in consecutive samples.
+    - n_samples_per_srt (int): Number of samples to generate per .srt file.
+    - overlap_chance (float): Probability that clips will overlap.
+    - max_overlap_chance (float): Maximum allowed overlap probability.
+    - audio_format (str): Desired audio format for output files.
+    - n_jobs (int, optional): Number of jobs to run in parallel. Default is 2.
+    - seed (int, optional): Seed for random number generation. Default is 42.
+    """
     data = combine_tsvs_to_dataframe(tsv_paths, clips_folders, partials=partials)
 
     Path(out_folder).mkdir(parents=True, exist_ok=True)

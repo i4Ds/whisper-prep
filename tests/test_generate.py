@@ -20,13 +20,21 @@ class TestGenerate(unittest.TestCase):
         with open("tests/assets/configs/test.yaml", "r") as stream:
             config = yaml.safe_load(stream)
 
-        if Path(config["out_folder"]).exists():
-            shutil.rmtree(config["out_folder"])
+        if Path(config["out_folder_base"]).exists():
+            shutil.rmtree(config["out_folder_base"])
+
+        out_folder_base = config["out_folder_base"]
+        dataset_name = config["dataset_name"]
+
+        out_folder = Path(out_folder_base, dataset_name)
+        out_folder.mkdir(parents=True, exist_ok=True)
+
+        config['out_folder'] = out_folder
 
         generate_fold_from_yaml(config)
 
     def create(self):
-        generate_folder = "tests/assets/out/sample"
+        generate_folder = "tests/assets/out/sample/test/"
         audio_dir = Path(generate_folder, "audios")
         transcript_dir = Path(generate_folder, "transcripts")
 
