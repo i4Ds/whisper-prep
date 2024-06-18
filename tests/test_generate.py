@@ -95,8 +95,6 @@ class TestGenerate(unittest.TestCase):
         hf_folder.mkdir(parents=True, exist_ok=True)
         hf_dataset.save_to_disk(str(hf_folder))
 
-        print(hf_dataset)
-
         assert "train" in str(dump_dir)
         assert "train" in str(hf_folder)
         assert "integration" in str(dump_dir)
@@ -105,7 +103,6 @@ class TestGenerate(unittest.TestCase):
         assert "123" in str(hf_folder)
 
         hf_dataset_loaded = load_from_disk(str(hf_folder))
-        print(hf_dataset_loaded)
 
         assert len(np.setdiff1d(hf_dataset[split_name].column_names, hf_dataset_loaded[split_name].column_names)) == 0
         assert len(hf_dataset_loaded) == len(hf_dataset)
