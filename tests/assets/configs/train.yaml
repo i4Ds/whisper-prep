@@ -1,6 +1,6 @@
 # Names and paths
 dataset_name: dataset_unittest # E.g. STT or SDS
-split_name: test # Name of the split, e.g. Train.
+split_name: train # Name of the split, e.g. Train.
 out_folder_base: "tests/assets/out/result"
 
 # Data Sources
