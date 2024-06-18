@@ -32,14 +32,12 @@
 
 <!-- ABOUT THE PROJECT -->
 ## About The Project
-This package helps you to create training data for fine-tuning whisper from sentences. 
+This package assists in generating training data for fine-tuning Whisper by synthesizing .srt files from sentences, mimicking real data through sentence concatenation.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 <!-- Guide -->
 ## Data Preparation Guide
-You can run `python main.py --config train.yaml" in the base path after installing this package to see how it works. Of course, you can also adapt it or call deeper f
-
 1. **Data File (.tsv):**
    - Create a `.tsv` file with two required columns:
      - `path`: The relative path to the `.mp3` file.
