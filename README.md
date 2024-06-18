@@ -1,3 +1,4 @@
+<a id="readme-top"></a>
 <!-- PROJECT SHIELDS -->
 <!--
 *** I'm using markdown "reference style" links for readability.
@@ -8,7 +9,6 @@
 -->
 [![Issues][issues-shield]][issues-url]
 [![MIT License][license-shield]][license-url]
-
 
 <!-- PROJECT LOGO -->
 <br />
@@ -47,10 +47,10 @@ You can run `python main.py --config train.yaml" in the base path after installi
    - Optional: If a `client_id` is included, it can be used to increase the probability that following sentences are from the same speaker. Refer to `generate_fold` in `src/whisper_prep/generation/generate.py` for additional features.
 
 2. **Configuration File (.yaml):**
-   - Set up a `.yaml` configuration file. An example can be found at `tests/assets/configs/test.yaml`.
+   - Set up a `.yaml` configuration file. An example can be found at `tests/assets/configs/test.yaml` or in `train.yaml`.
 
 3. **Running the Generation Script:**
-   - Use the `main` function in `main.py`, inputting your `.yaml` file as a path, to start generating data folds.
+   - Run `whisper_prep -c <path_to_your_yaml_file>`. 
 
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>

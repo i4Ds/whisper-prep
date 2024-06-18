@@ -1,7 +1,7 @@
 # Names and paths
-dataset_name: example # E.g. STT or SDS
-split_name: train # Name of the split, e.g. Train.
-out_folder_base: main # Base_path
+dataset_name: example_dataset # E.g. STT or SDS
+split_name: example_split # Name of the split, e.g. Train.
+out_folder_base: example # Base_path
 
 # Data Sources
 tsv_paths: ["tests/assets/tsv-data-example/export_20211220_sample_10utterances copy.tsv"]

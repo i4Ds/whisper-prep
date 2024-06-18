@@ -7,7 +7,7 @@ import yaml
 from whisper_prep.generation.data_processor import DataProcessor
 from whisper_prep.generation.generate import generate_fold_from_yaml
 from whisper_prep.dataset.convert import ljson_to_hf_dataset
-from datasets import load_dataset, load_from_disk
+from datasets import load_from_disk
 
 class TestGenerate(unittest.TestCase):
     def test_generate_data(self):
