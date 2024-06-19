@@ -1,13 +1,16 @@
 import shutil
 import unittest
 from pathlib import Path
+
 import numpy as np
 import yaml
+from datasets import DatasetDict, load_from_disk
 
+from whisper_prep import main
 from whisper_prep.generation.data_processor import DataProcessor
 from whisper_prep.generation.generate import generate_fold_from_yaml
-from datasets import load_from_disk, DatasetDict
-from whisper_prep import main
+
+
 class TestGenerate(unittest.TestCase):
     def test_generate_data(self):
         if Path("tests/assets/out/").exists():
@@ -24,10 +27,10 @@ class TestGenerate(unittest.TestCase):
         out_folder_base = config["out_folder_base"]
         dataset_name = config["dataset_name"]
 
-        out_folder = Path(out_folder_base, dataset_name, config['split_name'])
+        out_folder = Path(out_folder_base, dataset_name, config["split_name"])
         out_folder.mkdir(parents=True, exist_ok=True)
 
-        config['out_folder'] = out_folder
+        config["out_folder"] = out_folder
 
         generate_fold_from_yaml(config)
 
@@ -36,7 +39,9 @@ class TestGenerate(unittest.TestCase):
         audio_dir = Path(generate_folder, "audios")
         transcript_dir = Path(generate_folder, "transcripts")
 
-        output_dir = Path("tests/assets/out/result/dataset_unittest/test/created_dataset")
+        output_dir = Path(
+            "tests/assets/out/result/dataset_unittest/test/created_dataset"
+        )
         output_file = Path(output_dir, "data.json")
         dump_dir = Path(output_dir, "dump")
 
@@ -55,7 +60,7 @@ class TestGenerate(unittest.TestCase):
 
     def integration(self):
         hf_paths = {}
-        for split in ['train', 'val']:
+        for split in ["train", "val"]:
             # Read YAML file
             with open(f"tests/assets/configs/{split}.yaml", "r") as stream:
                 config = yaml.safe_load(stream)
@@ -76,28 +81,51 @@ class TestGenerate(unittest.TestCase):
             assert "dataset_unittest" in str(hf_folder)
             assert split in str(dump_dir)
             assert split in str(hf_folder)
-            assert "tests/assets/out/result" in str(dump_dir)
-            assert "tests/assets/out/result" in str(hf_folder)
+            assert "tests/assets/out/result" in str(
+                dump_dir
+            ) or r"tests\assets\out\result" in str(dump_dir)
+            assert "tests/assets/out/result" in str(
+                hf_folder
+            ) or r"tests\assets\out\result" in str(hf_folder)
 
             hf_dataset_loaded = load_from_disk(str(hf_folder))
 
             print(hf_dataset_loaded[split_name])
-            assert len(np.setdiff1d(['audio', 'text', 'language', 'prompt'], hf_dataset_loaded[split_name].column_names)) == 0
-            assert len(hf_dataset_loaded[split_name]) in [4, 5] # Can be also 5 rows, depends on seed.
+            assert (
+                len(
+                    np.setdiff1d(
+                        ["audio", "text", "language", "prompt"],
+                        hf_dataset_loaded[split_name].column_names,
+                    )
+                )
+                == 0
+            )
+            assert len(hf_dataset_loaded[split_name]) in [
+                4,
+                5,
+            ]  # Can be also 5 rows, depends on seed.
 
-        
         # Create final dataset
         dataset = DatasetDict()
         print(hf_paths)
-        dataset['train'] = load_from_disk(str(hf_paths['train']))['train']
-        dataset['val'] = load_from_disk(str(hf_paths['val']))['val']
+        dataset["train"] = load_from_disk(str(hf_paths["train"]))["train"]
+        dataset["val"] = load_from_disk(str(hf_paths["val"]))["val"]
 
         assert len(dataset) == 2, "Dataset does not contain two splits."
-        for split in ['train', 'val']:
-            assert len(np.setdiff1d(['audio', 'text', 'language', 'prompt'], dataset[split].column_names)) == 0
+        for split in ["train", "val"]:
+            assert (
+                len(
+                    np.setdiff1d(
+                        ["audio", "text", "language", "prompt"],
+                        dataset[split].column_names,
+                    )
+                )
+                == 0
+            )
             assert len(dataset[split]) in [4, 5]
 
 
-
+if __name__ == "__main__":
+    unittest.main()
 if __name__ == "__main__":
     unittest.main()
