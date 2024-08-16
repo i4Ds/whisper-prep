@@ -50,6 +50,9 @@ This package assists in generating training data for fine-tuning Whisper by synt
 3. **Running the Generation Script:**
    - Run `whisper_prep -c <path_to_your_yaml_file>`. 
 
+4. **Upload to Huggingface.com:**
+   - https://huggingface.co/docs/datasets/v1.16.0/upload_dataset.html
+
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
