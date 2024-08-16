@@ -1,15 +1,22 @@
-# Names and paths
-dataset_name: example_dataset # E.g. STT or SDS
-split_name: example_split # Name of the split, e.g. Train.
-out_folder_base: example # Base_path
+# Output structure: out_folder_base/dataset_name/split_name
+dataset_name: example_dataset # Name of the dataset (e.g. STT or SDS). This will be the main output folder.
+split_name: example_split # Name of the data split (e.g. Train, Test, Validation).
+out_folder_base: example # Base path for all output
 
 # Data Sources
 tsv_paths: ["tests/assets/tsv-data-example/export_20211220_sample_10utterances copy.tsv"]
 clips_folders: ["tests/assets/tsv-data-example/clips"]
-partials: [1.0]
+partials: [1.0] # Proportion of each dataset to use (e.g. 0.5 will use 50% of the dataset)
 
-# Generate config
-maintain_speaker_chance: 0.5
-n_samples_per_srt: 16
-overlap_chance: 0.6
-max_overlap_chance: 0.2
+# Generation configuration
+maintain_speaker_chance: 0.5 # Probability of keeping the same speaker for consecutive utterances
+n_samples_per_srt: 16 # Number of audio samples to combine into each SRT file
+
+# Overlap settings
+overlap_chance: 0.6 # Probability of creating an overlap between consecutive audio clips
+                    # Overlap occurs only in non-speech segments, as detected by Voice Activity Detection (VAD)
+
+max_overlap_chance: 0.2 # Probability of maximum overlap when an overlap occurs
+                        # If triggered, non-speech audio is removed, resulting in back-to-back speech
+                        # If not triggered, a random amount of non-speech audio is kept between utterances
+                        # It can only trigger if overlap_chance was triggered

@@ -45,7 +45,7 @@ This package assists in generating training data for fine-tuning Whisper by synt
    - Optional: If a `client_id` is included, it can be used to increase the probability that following sentences are from the same speaker. Refer to `generate_fold` in `src/whisper_prep/generation/generate.py` for additional features.
 
 2. **Configuration File (.yaml):**
-   - Set up a `.yaml` configuration file. An example can be found at `tests/assets/configs/test.yaml` or in `train.yaml`.
+   - Set up a `.yaml` configuration file. An example can be found at `example.yaml`.
 
 3. **Running the Generation Script:**
    - Run `whisper_prep -c <path_to_your_yaml_file>`. 
