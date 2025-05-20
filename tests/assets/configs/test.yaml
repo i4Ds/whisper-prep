@@ -7,9 +7,11 @@ out_folder_base: "tests/assets/out/result"
 tsv_paths: ["tests/assets/tsv-data-example/export_20211220_sample_10utterances copy.tsv"]
 clips_folders: ["tests/assets/tsv-data-example/clips"]
 partials: [1.0]
+normalize_text: True
 
 # Generate config
 maintain_speaker_chance: 0.5
 n_samples_per_srt: 16
-overlap_chance: 0.6
-max_overlap_chance: 0.2
+overlap_chance: 0.8
+max_overlap_chance: 0.5
+max_overlap_duration: 0.0

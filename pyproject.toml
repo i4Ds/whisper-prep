@@ -126,7 +126,8 @@ dependencies = [
   "soundfile",
   "openai-whisper",
   "torchaudio",
-  "pyyaml"
+  "pyyaml",
+  "silero-vad",
 ]
 
 # List additional groups of dependencies here (e.g. development

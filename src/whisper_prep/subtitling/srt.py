@@ -42,11 +42,14 @@ def generate_srt(captions: list[Caption], save_path: Union[str, Path]) -> None:
     temp_obj = Template(temp_str)
 
     for idx, caption in enumerate(captions):
+        if idx > 0:
+            prev_end = captions[idx - 1].end_second + captions[idx - 1].offset
+            curr_start = caption.start_second + caption.offset
+            if curr_start <= prev_end:
+                caption.start_second = prev_end + 0.02 - captions[idx - 1].offset
+
         srt_content += temp_obj.substitute(
-            index=idx + 1,
-            start=caption.start_timestamp(),
-            end=caption.end_timestamp(),
-            text=caption.text,
+            index=idx + 1, start=caption.start_timestamp(), end=caption.end_timestamp(), text=caption.text
         )
 
     with open(save_path, "w", encoding="utf-8") as srt_file:

@@ -1,12 +1,14 @@
 import collections
 from dataclasses import dataclass
-from typing import Iterator, List, Tuple, Union
+from typing import Iterator
 
 import numpy as np
-import torch
-import torchaudio
+
 from webrtcvad import Vad
 
+from silero_vad import load_silero_vad, read_audio, get_speech_timestamps
+
+SILERO_MODEL = load_silero_vad()
 
 @dataclass
 class Frame:
@@ -92,40 +94,34 @@ class VoiceActivityDetector:
         return start_second, end_second
 
 
-class VADSilero:
-    """Very slow. Needs to be run in an Onnx-Instance."""
 
-    def __init__(
-        self,
-        model_repo: str = "snakers4/silero-vad",
-        model_name: str = "silero_vad",
-        force_reload: bool = True,
-    ):
-        self.model, self.utils = torch.hub.load(
-            repo_or_dir=model_repo, model=model_name, force_reload=force_reload
-        )
-        self.get_speech_timestamps = self.utils[0]
+def silero_vad_collector(
+    path: str,
+    threshold: float = 0.5,
+    min_speech_duration_ms: int = 250,
+    min_silence_duration_ms: int = 100,
+    window_size_samples: int = 1024,
+    speech_pad_ms: int = 30,
+) -> tuple[float, float]:
 
-    def return_start_end_of_audio(
-        self, audio: Union[str, np.array], sample_rate: int = 16000
-    ) -> Tuple[float, float]:
-        list_start_ends = self.return_speech_timestamps(audio, sample_rate)
-        return list_start_ends[0]["start"], list_start_ends[-1]["end"]
+    audio = read_audio(path)
 
-    def return_speech_timestamps(
-        self, audio: Union[str, np.array], sample_rate: int = 16000
-    ) -> List[Tuple[float, float]]:
-        if isinstance(audio, str):
-            wav, aud_sr = torchaudio.load(audio)
-            wav = torchaudio.functional.resample(
-                wav, orig_freq=aud_sr, new_freq=sample_rate
-            )
-            wav = torch.mean(wav, dim=0)
-        else:
-            wav, sample_rate = torch.from_numpy(audio), sample_rate
+    # Get speech timestamps
+    speech_timestamps = get_speech_timestamps(
+        audio,
+        SILERO_MODEL,
+        threshold=threshold,
+        min_speech_duration_ms=min_speech_duration_ms,
+        min_silence_duration_ms=min_silence_duration_ms,
+        window_size_samples=window_size_samples,
+        speech_pad_ms=speech_pad_ms,
+        return_seconds=True,
+    )
 
-        # get speech timestamps from full audio file
-        speech_timestamps = self.get_speech_timestamps(
-            wav, self.model, sampling_rate=sample_rate, return_seconds=True
-        )
-        return [(ts["start"], ts["end"]) for ts in speech_timestamps]
+    if not speech_timestamps:
+        return 0.0, 0.0
+
+    start_second = speech_timestamps[0]["start"]
+    end_second = speech_timestamps[-1]["end"]
+
+    return start_second, end_second

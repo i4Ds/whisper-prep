@@ -11,10 +11,10 @@ from pydub import AudioSegment
 from tqdm import tqdm
 
 from whisper_prep.audio.io import read_audio, save_audio_segment
-from whisper_prep.audio.vad import VoiceActivityDetector
+from whisper_prep.audio.vad import  silero_vad_collector
 from whisper_prep.dataset.convert import combine_tsvs_to_dataframe
 from whisper_prep.subtitling.srt import Caption, generate_srt
-
+from whisper_prep.generation.text_normalizer import normalize_text as normalize_text_
 
 def _get_number_of_rows(speaker_groups) -> int:
     return sum(len(data) for _, data in speaker_groups.items())
@@ -36,6 +36,7 @@ def _generate_wrapper(
     transcripts_folder: Union[Path, str],
     overlap_chance: float,
     max_overlap_chance: float,
+    max_overlap_duration: float,
     audio_format: str,
 ) -> None:
     try:
@@ -45,6 +46,7 @@ def _generate_wrapper(
             transcripts_folder=transcripts_folder,
             overlap_chance=overlap_chance,
             max_overlap_chance=max_overlap_chance,
+            max_overlap_duration=max_overlap_duration, 
             audio_format=audio_format,
         )
     except Exception as e:
@@ -64,6 +66,7 @@ def _generate(
     transcripts_folder,
     overlap_chance: float,
     max_overlap_chance: float,
+    max_overlap_duration: float,
     audio_format: str = "mp3",
 ) -> None:
     offset = 0
@@ -73,31 +76,16 @@ def _generate(
     combined_audio = AudioSegment.empty()
     captions = []
 
-    vad_detector = VoiceActivityDetector(
-        aggressiveness=2,
-        frame_duration_ms=30,
-        padding_duration_ms=200,
-        rate_voiced_frames_threshold=0.95,
-        rate_unvoiced_frames_threshold=0.95,
-    )
-
-    # Logic helper to check for the next speaker_id
-    speaker_ids = [x["speaker_id"] for x in constructed_samples]
-    speaker_ids.append(None)
-
     for i, segment in enumerate(constructed_samples):
         audio_file_path = segment["path"]
         sentence = segment["sentence"]
-        next_speaker = speaker_ids[i + 1]
-        curr_speaker = speaker_ids[i]
         audio_segment = read_audio(audio_file_path, resample_rate=16000)
         audio_duration_seconds = audio_segment.duration_seconds
         current_seg_dur += audio_duration_seconds
 
         # Determine start and end seconds using Voice Activity Detection (VAD)
-        start_second, end_second = vad_detector.return_start_end_of_audio(
-            audio=audio_segment, sample_rate=audio_segment.frame_rate
-        )
+        start_second, end_second = silero_vad_collector(audio_file_path)
+        print(f"Start: {start_second}, End: {end_second}")
 
         if end_second is None:
             end_second = audio_duration_seconds
@@ -107,7 +95,6 @@ def _generate(
             combined_text = f"{combined_text} {sentence}"
 
         overlap_move = 0
-        space_before_seconds = 0
 
         # Check if the segment should overlap with the previous one
         if i > 0 and random.random() < overlap_chance:
@@ -116,9 +103,9 @@ def _generate(
 
             # Determine the extent of overlap based on max_overlap_chance
             if random.random() < max_overlap_chance:
-                overlap_move = total_space
+                overlap_move = total_space + max_overlap_duration
             else:
-                overlap_move = random.uniform(0, total_space)
+                overlap_move = random.uniform(0, total_space + max_overlap_duration) 
 
             current_seg_dur += audio_segment.duration_seconds - overlap_move
 
@@ -142,9 +129,7 @@ def _generate(
             current_seg_start = start_second - overlap_move + offset
         # Create and add captions for each segment
         # If the netflix rules are reached or the next speaker is not the same, fuse captions.
-        if (
-            len(combined_text) > 42 or current_seg_dur > 7
-        ) or next_speaker != curr_speaker:
+        if len(combined_text) > 42 or current_seg_dur > 7:
             caption = Caption(
                 start_second=current_seg_start,
                 end_second=offset + end_second - overlap_move,
@@ -188,8 +173,10 @@ def generate_fold(
     out_folder: Union[str, Path],
     maintain_speaker_chance: float,
     n_samples_per_srt: int,
+    normalize_text: bool,
     overlap_chance: float,
     max_overlap_chance: float,
+    max_overlap_duration: float, 
     audio_format: str = "mp3",
     n_jobs: int = 4,
     seed: int = 42,
@@ -258,6 +245,10 @@ def generate_fold(
         fold_data.loc[sample.name, "picked"] = 1
         remaining_samples -= 1
 
+        # Normalize the sentence
+        if normalize_text:
+            sentence = normalize_text_(sentence)
+
         # Remove sample for speaker groups
         speaker_groups[last_speaker] = speaker_groups[last_speaker].iloc[1:]
 
@@ -288,6 +279,7 @@ def generate_fold(
                 transcripts_folder=transcripts_folder,
                 overlap_chance=overlap_chance,
                 max_overlap_chance=max_overlap_chance,
+                max_overlap_duration=max_overlap_duration, 
                 audio_format=audio_format,
             )
 
@@ -305,6 +297,7 @@ def generate_fold(
         transcripts_folder=transcripts_folder,
         overlap_chance=overlap_chance,
         max_overlap_chance=max_overlap_chance,
+        max_overlap_duration=max_overlap_duration, 
         audio_format=audio_format,
     )
 
