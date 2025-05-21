@@ -7,10 +7,11 @@ from whisper_prep.generation.data_processor import DataProcessor
 from whisper_prep.generation.generate import generate_fold_from_yaml
 from whisper_prep.utils import parse_args
 
+
 def main(config=None):
     if config is None:
         args = parse_args()
-        
+
         with open(args.config, "r") as config_file:
             config = yaml.safe_load(config_file)
 
@@ -21,7 +22,7 @@ def main(config=None):
     out_folder = Path(out_folder_base, dataset_name, split_name)
     out_folder.mkdir(parents=True, exist_ok=True)
 
-    config['out_folder'] = out_folder
+    config["out_folder"] = out_folder
 
     generate_fold_from_yaml(config)
 
@@ -48,3 +49,7 @@ def main(config=None):
     hf_folder = Path(out_folder, "hf")
     hf_folder.mkdir(parents=True, exist_ok=True)
     hf_dataset.save_to_disk(str(hf_folder))
+
+    # Upload to huggingface hub if config is not None
+    if config["upload_to_hu"]:
+        hf_dataset.push_to_hub(config["hu_dataset_path"], split=split_name)

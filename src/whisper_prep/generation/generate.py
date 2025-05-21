@@ -11,10 +11,11 @@ from pydub import AudioSegment
 from tqdm import tqdm
 
 from whisper_prep.audio.io import read_audio, save_audio_segment
-from whisper_prep.audio.vad import  silero_vad_collector
+from whisper_prep.audio.vad import silero_vad_collector
 from whisper_prep.dataset.convert import combine_tsvs_to_dataframe
 from whisper_prep.subtitling.srt import Caption, generate_srt
 from whisper_prep.generation.text_normalizer import normalize_text as normalize_text_
+
 
 def _get_number_of_rows(speaker_groups) -> int:
     return sum(len(data) for _, data in speaker_groups.items())
@@ -46,7 +47,7 @@ def _generate_wrapper(
             transcripts_folder=transcripts_folder,
             overlap_chance=overlap_chance,
             max_overlap_chance=max_overlap_chance,
-            max_overlap_duration=max_overlap_duration, 
+            max_overlap_duration=max_overlap_duration,
             audio_format=audio_format,
         )
     except Exception as e:
@@ -85,7 +86,6 @@ def _generate(
 
         # Determine start and end seconds using Voice Activity Detection (VAD)
         start_second, end_second = silero_vad_collector(audio_file_path)
-        print(f"Start: {start_second}, End: {end_second}")
 
         if end_second is None:
             end_second = audio_duration_seconds
@@ -105,7 +105,7 @@ def _generate(
             if random.random() < max_overlap_chance:
                 overlap_move = total_space + max_overlap_duration
             else:
-                overlap_move = random.uniform(0, total_space + max_overlap_duration) 
+                overlap_move = random.uniform(0, total_space + max_overlap_duration)
 
             current_seg_dur += audio_segment.duration_seconds - overlap_move
 
@@ -176,7 +176,7 @@ def generate_fold(
     normalize_text: bool,
     overlap_chance: float,
     max_overlap_chance: float,
-    max_overlap_duration: float, 
+    max_overlap_duration: float,
     audio_format: str = "mp3",
     n_jobs: int = 4,
     seed: int = 42,
@@ -193,6 +193,7 @@ def generate_fold(
     - n_samples_per_srt (int): Number of samples to generate per .srt file.
     - overlap_chance (float): Probability that clips will overlap.
     - max_overlap_chance (float): Maximum allowed overlap probability.
+    - max_overlap_duration (float): Maximum duration for overlap.
     - audio_format (str): Desired audio format for output files.
     - n_jobs (int, optional): Number of jobs to run in parallel. Default is 2.
     - seed (int, optional): Seed for random number generation. Default is 42.
@@ -279,7 +280,7 @@ def generate_fold(
                 transcripts_folder=transcripts_folder,
                 overlap_chance=overlap_chance,
                 max_overlap_chance=max_overlap_chance,
-                max_overlap_duration=max_overlap_duration, 
+                max_overlap_duration=max_overlap_duration,
                 audio_format=audio_format,
             )
 
@@ -297,7 +298,7 @@ def generate_fold(
         transcripts_folder=transcripts_folder,
         overlap_chance=overlap_chance,
         max_overlap_chance=max_overlap_chance,
-        max_overlap_duration=max_overlap_duration, 
+        max_overlap_duration=max_overlap_duration,
         audio_format=audio_format,
     )
 
