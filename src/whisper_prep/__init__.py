@@ -7,6 +7,7 @@ from whisper_prep.generation.data_processor import DataProcessor
 from whisper_prep.generation.generate import generate_fold_from_yaml
 from whisper_prep.utils import parse_args
 
+from datasets import load_dataset
 
 def main(config=None):
     if config is None:
@@ -24,10 +25,36 @@ def main(config=None):
 
     config["out_folder"] = out_folder
 
-    generate_fold_from_yaml(config)
+    hu_name = config.get("hu_dataset")
+    if hu_name:
+        ds = load_dataset(hu_name)
+        split_ds = ds[split_name]
+        audio_dir = Path(out_folder, "audios")
+        transcript_dir = Path(out_folder, "transcripts")
+        audio_dir.mkdir(parents=True, exist_ok=True)
+        transcript_dir.mkdir(parents=True, exist_ok=True)
+        for idx, example in enumerate(split_ds):
+            audio_field = example.get("audio")
+            # handle array+rate case or file path
+            if isinstance(audio_field, dict) and "array" in audio_field and "sampling_rate" in audio_field:
+                import soundfile as sf
 
-    audio_dir = Path(out_folder, "audios")
-    transcript_dir = Path(out_folder, "transcripts")
+                base = example.get("id", idx)
+                dest = audio_dir / f"{base}.mp3"
+                sf.write(str(dest), audio_field["array"], audio_field["sampling_rate"])
+            else:             
+                raise ValueError(f"Could not handle audio field {audio_field}")
+
+            srt_text = example.get("srt")
+            if srt_text is None:
+                raise ValueError("Dataset entry missing 'srt' column")
+            srt_file = transcript_dir / f"{dest.stem}.srt"
+            with open(srt_file, "w", encoding="utf-8") as f:
+                f.write(srt_text)
+    else:
+        generate_fold_from_yaml(config)
+        audio_dir = Path(out_folder, "audios")
+        transcript_dir = Path(out_folder, "transcripts")
 
     output_dir = Path(out_folder, "created_dataset")
     output_file = Path(output_dir, "data.ljson")
@@ -41,15 +68,14 @@ def main(config=None):
         output=output_file,
         dump_dir=dump_dir,
     )
-
     data_processor.run()
 
     hf_dataset = ljson_to_hf_dataset(json_path=output_file, split_name=split_name)
-
     hf_folder = Path(out_folder, "hf")
     hf_folder.mkdir(parents=True, exist_ok=True)
     hf_dataset.save_to_disk(str(hf_folder))
 
     # Upload to huggingface hub if config is not None
     if config["upload_to_hu"]:
-        hf_dataset.push_to_hub(config["hu_dataset_path"], split=split_name)
+        hf_dataset.push_to_hub(config["hu_repo"], split=split_name)
+

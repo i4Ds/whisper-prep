@@ -46,6 +46,8 @@ This package assists in generating training data for fine-tuning Whisper by synt
 
 2. **Configuration File (.yaml):**
    - Set up a `.yaml` configuration file. An example can be found at `example.yaml`.
+  
+   - (Optional) To load data directly from a HuggingFace dataset with `audio` and `srt` columns, set the `hu_dataset` field to the dataset identifier; this will bypass TSV-based generation.
 
 3. **Running the Generation Script:**
    - Run `whisper_prep -c <path_to_your_yaml_file>`. 
