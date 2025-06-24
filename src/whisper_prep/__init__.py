@@ -8,6 +8,8 @@ from whisper_prep.generation.generate import generate_fold_from_yaml
 from whisper_prep.utils import parse_args
 
 from datasets import load_dataset
+from tqdm.auto import tqdm
+
 
 def main(config=None):
     if config is None:
@@ -33,16 +35,24 @@ def main(config=None):
         transcript_dir = Path(out_folder, "transcripts")
         audio_dir.mkdir(parents=True, exist_ok=True)
         transcript_dir.mkdir(parents=True, exist_ok=True)
-        for idx, example in enumerate(split_ds):
+        for idx, example in tqdm(
+            enumerate(split_ds),
+            total=len(split_ds),
+            desc=f"Saving audio files to {audio_dir}",
+        ):
             audio_field = example.get("audio")
             # handle array+rate case or file path
-            if isinstance(audio_field, dict) and "array" in audio_field and "sampling_rate" in audio_field:
+            if (
+                isinstance(audio_field, dict)
+                and "array" in audio_field
+                and "sampling_rate" in audio_field
+            ):
                 import soundfile as sf
 
                 base = example.get("id", idx)
                 dest = audio_dir / f"{base}.mp3"
                 sf.write(str(dest), audio_field["array"], audio_field["sampling_rate"])
-            else:             
+            else:
                 raise ValueError(f"Could not handle audio field {audio_field}")
 
             srt_text = example.get("srt")
@@ -77,5 +87,4 @@ def main(config=None):
 
     # Upload to huggingface hub if config is not None
     if config["upload_to_hu"]:
-        hf_dataset.push_to_hub(config["hu_repo"], split=split_name)
-
+        hf_dataset.push_to_hub(config["hu_repo"])

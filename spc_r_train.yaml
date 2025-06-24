@@ -1,7 +1,7 @@
 # Output structure: out_folder_base/dataset_name/split_name
 dataset_name: spc_r_whisper # Name of the dataset (e.g. STT or SDS). This will be the main output folder.
-split_name: test # Name of the data split (e.g. Train, Test, Validation).
-out_folder_base: spc_r_whisper # Base path for all output
+split_name: train # Name of the data split (e.g. Train, Test, Validation).
+out_folder_base: out # Base path for all output
 
 # Data Sources
 hu_dataset: i4ds/spc_r  # Optional HuggingFace dataset identifier with 'audio' and 'srt' columns; overrides TSV inputs if set
