@@ -19,7 +19,9 @@ def remove_keywords_with_brackets(
 ):
     if any(keyword in text for keyword in keywords):
         # Create a single pattern that matches any of the keywords
-        pattern = re.compile(r"<\|.*?\|>.*?(" + "|".join(map(re.escape, keywords)) + r").*?<\|.*?\|>")
+        pattern = re.compile(
+            r"<\|.*?\|>.*?(" + "|".join(map(re.escape, keywords)) + r").*?<\|.*?\|>"
+        )
         # Replace all matches with an empty string
         return pattern.sub("", text)
     else:
@@ -86,7 +88,7 @@ def standardize_text(text: str) -> str:
     """
     # Define replacements for specific Unicode and typographic characters
     replacements = {
-        "\u00AD": "",  # Remove soft hyphen
+        "\u00ad": "",  # Remove soft hyphen
         "ß": "ss",
         "/, ": "",  # Handle cases like 'Renter/, innen' mentioned in the comments
         "‘": "",
@@ -161,6 +163,48 @@ def normalize_tripple_dots(text: str) -> str:
 def remove_bracketed_text(text):
     # Use regex to remove all text between [ and ] including the brackets
     return re.sub(r"\[.*?\]", "", text).strip()
+
+
+def tokenize(text):
+    # treat "..." as a standalone token
+    return re.findall(r"\.\.\.|[^\s]+", text)
+
+
+def collapse_ngrams(tokens, max_n=3):
+    out, i = [], 0
+    while i < len(tokens):
+
+        # 1️⃣  Collapse runs of a single repeated token
+        j = i + 1
+        while j < len(tokens) and tokens[j] == tokens[i]:
+            j += 1
+        if j - i > 1:  # found a run ≥ 2
+            out.append(tokens[i])
+            i = j
+            continue  # restart loop
+
+        # 2️⃣  Collapse repeated n-grams of length 2-max_n
+        replaced = False
+        for n in range(max_n, 1, -1):  # skip n=1 (already handled)
+            if (
+                i + 2 * n <= len(tokens)
+                and tokens[i : i + n] == tokens[i + n : i + 2 * n]
+            ):
+                k = i + n
+                while k + n <= len(tokens) and tokens[i : i + n] == tokens[k : k + n]:
+                    k += n
+                out.extend(tokens[i : i + n])  # keep one copy
+                i = k
+                replaced = True
+                break
+        if not replaced:
+            out.append(tokens[i])
+            i += 1
+    return out
+
+
+def collapse_text(text, max_n=3):
+    return " ".join(collapse_ngrams(tokenize(text), max_n))
 
 
 class GermanNumberConverter:
@@ -253,12 +297,14 @@ class GermanNumberConverter:
     def convert(self, text):
         return self.convert_number(text)
 
+
 def normalize_text(text):
     text = remove_bracketed_text(text)
     text = normalize_tripple_dots(text)
     text = normalize_abbrv(text)
     text = normalize_capitalization(text)
     text = standardize_text(text)
+    text = collapse_text(text)
     converter = GermanNumberConverter()
     text = converter.convert(text)
     return text
