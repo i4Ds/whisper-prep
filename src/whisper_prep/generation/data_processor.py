@@ -33,8 +33,7 @@ class DataProcessor:
         output: str = "data.json",
         dump_dir: str = "dump",
         timestamp_resolution: int = 20,
-        max_prompt_length: int = 223
-        * 1.2,  # 223 tokens and some extra for the time stamps.
+        max_prompt_length: int = 223, # 223 tokens and some extra for the time stamps.
         max_tokens_length: int = 219,
         subsampling_factor_for_silence: int = 1,
         rep_threshold: int = 3,
