@@ -303,9 +303,7 @@ class GermanNumberConverter:
 
 def normalize_text(text):
     text = remove_bracketed_text(text)
-    print(text)
     text = normalize_triple_dots(text)
-    print(text)
     text = normalize_abbrv(text)
     text = normalize_capitalization(text)
     text = standardize_text(text)

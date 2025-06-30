@@ -79,7 +79,6 @@ class TestGenerate(unittest.TestCase):
     def test_normalize_text_integration(self):
         text = "Hallo [remove]ABC... Test z.B. 150 000 €"
         result = normalize_text(text)
-        print(result)
         assert result == "Hallo ABC. Test zum Beispiel 150000 Euro"
 
 
