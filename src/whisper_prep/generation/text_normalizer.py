@@ -75,7 +75,8 @@ def normalize_abbrv(text):
         "ähm": "",
     }
     for abbr, full in abbreviation_map.items():
-        text = re.sub(rf"\b{re.escape(abbr)}\b", full, text)
+        pattern = re.compile(rf"(^|\s)({re.escape(abbr)})(?=\s|$)")
+        text = pattern.sub(lambda m: m.group(1) + full, text)
     return text
 
 
@@ -131,33 +132,35 @@ def normalize_capitalization(text):
     return " ".join(normalized_words)
 
 
-def normalize_tripple_dots(text: str) -> str:
-    """
-    Normalize dashes and triple dots in the text.
-    """
-    # Replace triple dots followed by any capital letter with a single dot
-    text = re.sub(r"\.{3}(?=\s*[A-Z])", ". ", text)
+ELLIPSIS = r"(?:\.{3}|…)"              # ASCII or Unicode
+def normalize_triple_dots(text: str) -> str:
+    # ────────────────────────────────────────────────────────────────────────
+    # 1️⃣  collapse any run of dots/ellipses to one period
+    #     add a space _only_ if the next char begins a word/number
+    # ────────────────────────────────────────────────────────────────────────
+    def _collapse(match: re.Match) -> str:
+        # peek at the next printable char (if any)
+        after = match.string[match.end():match.end()+1]
+        return ". " if after and after.isalnum() else "."
 
-    # Replace triple dots followed by spaces and a capital letter or digit with a single dot
-    text = re.sub(r"\.{3}\s*(?=[<\|\d+\.\d+\|\>\s*[A-Z])", ". ", text)
+    text = re.sub(ELLIPSIS + r"\s*", _collapse, text)
 
-    # Remove all other triple dots
-    text = re.sub(r"\.{3}", "", text)
-
-    # Replace certain combinations, which now are wrong
+    # ────────────────────────────────────────────────────────────────────────
+    # 2️⃣  tidy punctuation spacing (same as before, but ellipses are gone)
+    # ────────────────────────────────────────────────────────────────────────
     text = (
         text.replace(".,", ".")
-        .replace("  ", " ")
-        .replace(" ?", "?")
-        .replace(" !", "!")
-        .replace(" . ", ". ")
-        .replace(". <", ".<")
-        .replace("! <", "!<")
-        .replace("? <", "?<")
-        .replace(", <", ",<")
+            .replace("  ", " ")
+            .replace(" ?", "?")
+            .replace(" !", "!")
+            .replace(" . ", ". ")
+            .replace(". <", ".<")
+            .replace("! <", "!<")
+            .replace("? <", "?<")
+            .replace(", <", ",<")
     )
 
-    return text
+    return text.strip()
 
 
 def remove_bracketed_text(text):
@@ -300,7 +303,9 @@ class GermanNumberConverter:
 
 def normalize_text(text):
     text = remove_bracketed_text(text)
-    text = normalize_tripple_dots(text)
+    print(text)
+    text = normalize_triple_dots(text)
+    print(text)
     text = normalize_abbrv(text)
     text = normalize_capitalization(text)
     text = standardize_text(text)
