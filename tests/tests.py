@@ -69,6 +69,12 @@ class TestGenerate(unittest.TestCase):
         assert collapse_ngrams(tokens) == ["...", "Triage"]
         assert collapse_text(" ".join(tokens)) == "... Triage"
 
+        text = "Heute gehen wir an den See ... See ... See ... See ... See"
+        print(collapse_text(text))
+        assert collapse_text(text) == "Heute gehen wir an den See ... See"
+        text = "Heute gehen wir an den See und Baden da! Jawohl, es ist sonnig."
+        assert collapse_text(text) == text
+
     # GermanNumberConverter converts numbers, apostrophes, commas, and currency symbols
     def test_german_number_converter(self):
         converter = GermanNumberConverter()
