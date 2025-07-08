@@ -132,7 +132,9 @@ def normalize_capitalization(text):
     return " ".join(normalized_words)
 
 
-ELLIPSIS = r"(?:\.{3}|…)"              # ASCII or Unicode
+ELLIPSIS = r"(?:\.{3}|…)"  # ASCII or Unicode
+
+
 def normalize_triple_dots(text: str) -> str:
     # ────────────────────────────────────────────────────────────────────────
     # 1️⃣  collapse any run of dots/ellipses to one period
@@ -140,7 +142,7 @@ def normalize_triple_dots(text: str) -> str:
     # ────────────────────────────────────────────────────────────────────────
     def _collapse(match: re.Match) -> str:
         # peek at the next printable char (if any)
-        after = match.string[match.end():match.end()+1]
+        after = match.string[match.end() : match.end() + 1]
         return ". " if after and after.isalnum() else "."
 
     text = re.sub(ELLIPSIS + r"\s*", _collapse, text)
@@ -150,14 +152,14 @@ def normalize_triple_dots(text: str) -> str:
     # ────────────────────────────────────────────────────────────────────────
     text = (
         text.replace(".,", ".")
-            .replace("  ", " ")
-            .replace(" ?", "?")
-            .replace(" !", "!")
-            .replace(" . ", ". ")
-            .replace(". <", ".<")
-            .replace("! <", "!<")
-            .replace("? <", "?<")
-            .replace(", <", ",<")
+        .replace("  ", " ")
+        .replace(" ?", "?")
+        .replace(" !", "!")
+        .replace(" . ", ". ")
+        .replace(". <", ".<")
+        .replace("! <", "!<")
+        .replace("? <", "?<")
+        .replace(", <", ",<")
     )
 
     return text.strip()
@@ -165,7 +167,9 @@ def normalize_triple_dots(text: str) -> str:
 
 def remove_bracketed_text(text):
     # Use regex to remove all text between [ and ] including the brackets
-    return re.sub(r"\[.*?\]", "", text).strip()
+    text = re.sub(r"\[.*?\]", "", text).strip()
+    text = re.sub(r"\(.*?\)", "", text).strip()
+    return text
 
 
 def tokenize(text):
@@ -307,7 +311,6 @@ def normalize_text(text):
     text = normalize_abbrv(text)
     text = normalize_capitalization(text)
     text = standardize_text(text)
-    text = collapse_text(text)
     converter = GermanNumberConverter()
     text = converter.convert(text)
     return text

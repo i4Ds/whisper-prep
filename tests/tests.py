@@ -19,8 +19,9 @@ from whisper_prep.generation.text_normalizer import (
     normalize_text,
 )
 
+
 class TestGenerate(unittest.TestCase):
-# remove_keywords_with_brackets removes bracketed segments containing keywords
+    # remove_keywords_with_brackets removes bracketed segments containing keywords
     def test_remove_keywords_with_brackets(self):
         text = "<|tag|> Live-Untertitel content <|end|>"
         assert remove_keywords_with_brackets(text) == ""
@@ -31,9 +32,15 @@ class TestGenerate(unittest.TestCase):
     # normalize_abbrv expands common German abbreviations to full form
     def test_normalize_abbrv(self):
         assert normalize_abbrv(" z.B. ") == " zum Beispiel "
-        assert normalize_abbrv("Das ist ein dumz.B.er Test.") == "Das ist ein dumz.B.er Test."
+        assert (
+            normalize_abbrv("Das ist ein dumz.B.er Test.")
+            == "Das ist ein dumz.B.er Test."
+        )
         assert normalize_abbrv(" etc. ") == " et cetera "
-        assert normalize_abbrv("Heute könnten wir z.B. in die Bergwelt reisen.") == "Heute könnten wir zum Beispiel in die Bergwelt reisen."
+        assert (
+            normalize_abbrv("Heute könnten wir z.B. in die Bergwelt reisen.")
+            == "Heute könnten wir zum Beispiel in die Bergwelt reisen."
+        )
         # unknown text remains unchanged
         assert normalize_abbrv("abc") == "abc"
 
@@ -58,6 +65,7 @@ class TestGenerate(unittest.TestCase):
     # remove_bracketed_text removes text enclosed in square brackets
     def test_remove_bracketed_text(self):
         assert remove_bracketed_text("Keep [remove this] text") == "Keep  text"
+        assert remove_bracketed_text("Keep (remove this) text") == "Keep  text"
 
     # tokenize splits text into tokens, treating '...' as standalone token
     def test_tokenize(self):
@@ -65,7 +73,18 @@ class TestGenerate(unittest.TestCase):
 
     # collapse_ngrams collapses repeated tokens and n-grams; collapse_text combines tokenize
     def test_collapse_ngrams_and_collapse_text(self):
-        tokens = ["...", "Triage", "...", "Triage", "...", "Triage", "...", "Triage", "...", "Triage"]
+        tokens = [
+            "...",
+            "Triage",
+            "...",
+            "Triage",
+            "...",
+            "Triage",
+            "...",
+            "Triage",
+            "...",
+            "Triage",
+        ]
         assert collapse_ngrams(tokens) == ["...", "Triage"]
         assert collapse_text(" ".join(tokens)) == "... Triage"
 
@@ -86,7 +105,6 @@ class TestGenerate(unittest.TestCase):
         text = "Hallo [remove]ABC... Test z.B. 150 000 €"
         result = normalize_text(text)
         assert result == "Hallo ABC. Test zum Beispiel 150000 Euro"
-
 
 
 if __name__ == "__main__":

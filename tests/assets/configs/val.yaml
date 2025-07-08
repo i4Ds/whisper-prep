@@ -15,3 +15,5 @@ n_samples_per_srt: 16
 overlap_chance: 0.8
 max_overlap_chance: 0.5
 max_overlap_duration: 0.3
+
+upload_to_hu: False

@@ -15,7 +15,6 @@ def ljson_to_dataframe(json_path: Union[str, Path]) -> pd.DataFrame:
     with open(json_path, "r", encoding="utf-8") as file:
         for line in file:
             data.append(json.loads(line))
-
     return pd.DataFrame(data)
 
 
@@ -24,6 +23,8 @@ def ljson_to_hf_dataset(
 ) -> Dataset:
     train_meta_file = ljson_to_dataframe(json_path)
     train_meta_file.rename(columns={"audio_path": "audio"}, inplace=True)
+    # Some handy easy data cleaning
+    train_meta_file["text"] = train_meta_file["text"].strip()
 
     dataset_train = Dataset.from_pandas(train_meta_file)
 

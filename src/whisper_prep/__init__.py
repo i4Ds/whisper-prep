@@ -5,7 +5,7 @@ import yaml
 from whisper_prep.dataset.convert import ljson_to_hf_dataset
 from whisper_prep.generation.data_processor import DataProcessor
 from whisper_prep.generation.generate import generate_fold_from_yaml
-from whisper_prep.utils import parse_args
+from whisper_prep.utils import parse_args, get_compression_ratio
 
 from datasets import load_dataset
 from tqdm.auto import tqdm
@@ -81,6 +81,16 @@ def main(config=None):
     data_processor.run()
 
     hf_dataset = ljson_to_hf_dataset(json_path=output_file, split_name=split_name)
+    # Make some final checks on the text, text not empty, no duplicates, compression factor < 2.4
+    len_before = len(hf_dataset)
+    hf_dataset = hf_dataset.filter(lambda x: len(x["text"] > 8))
+    hf_dataset = hf_dataset.filter(lambda x: get_compression_ratio(x["text"]) < 2.4)
+
+    if len_before != len(hf_dataset):
+        print(
+            f"Removed {len_before - len(hf_dataset)} samples due to text quality issues."
+        )
+    # Save to disk
     hf_folder = Path(out_folder, "hf")
     hf_folder.mkdir(parents=True, exist_ok=True)
     hf_dataset.save_to_disk(str(hf_folder))
