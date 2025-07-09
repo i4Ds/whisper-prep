@@ -81,12 +81,29 @@ def main(config=None):
     data_processor.run()
 
     hf_dataset = ljson_to_hf_dataset(json_path=output_file, split_name=split_name)
+
     # Make some final checks on the text, text not empty, no duplicates, compression factor < 2.4
     len_before = len(hf_dataset)
-    hf_dataset = hf_dataset.filter(lambda x: len(x["text"] > 8))
-    hf_dataset = hf_dataset.filter(lambda x: get_compression_ratio(x["text"]) < 2.4)
+    # Get indices and examples that do not meet quality checks
+    bad_examples = []
+    for idx, example in enumerate(hf_dataset):
+        if len(example["text"]) <= 8 or get_compression_ratio(example["text"]) >= 2.4:
+            bad_examples.append((idx, example["text"]))
 
-    if len_before != len(hf_dataset):
+    # Print out problematic examples
+    if bad_examples:
+        print(f"Found {len(bad_examples)} problematic samples:")
+        for idx, text in bad_examples:
+            print(f"- Index {idx}: {repr(text)}")
+
+    # Filter out problematic examples
+    bad_indices = [idx for idx, _ in bad_examples]
+    hf_dataset = hf_dataset.select(
+        [idx for idx in range(len(hf_dataset)) if idx not in bad_indices]
+    )
+
+    # Confirm removal
+    if bad_examples:
         print(
             f"Removed {len_before - len(hf_dataset)} samples due to text quality issues."
         )
