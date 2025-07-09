@@ -18,13 +18,14 @@ def ljson_to_dataframe(json_path: Union[str, Path]) -> pd.DataFrame:
     return pd.DataFrame(data)
 
 
-def ljson_to_hf_dataset(
-    json_path: Union[str, Path], split_name: str = "train"
-) -> Dataset:
+def ljson_to_pandas(json_path: Union[str, Path]) -> Dataset:
     train_meta_file = ljson_to_dataframe(json_path)
     train_meta_file.rename(columns={"audio_path": "audio"}, inplace=True)
-    # Some handy easy data cleaning
-    train_meta_file["text"] = train_meta_file["text"].str.strip()
+
+    return train_meta_file
+
+
+def pandas_to_hf_dataset(train_meta_file: pd.DataFrame, split_name: str = "train"):
 
     dataset_train = Dataset.from_pandas(train_meta_file)
 

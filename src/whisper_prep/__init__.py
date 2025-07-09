@@ -2,7 +2,7 @@ from pathlib import Path
 
 import yaml
 
-from whisper_prep.dataset.convert import ljson_to_hf_dataset
+from whisper_prep.dataset.convert import ljson_to_pandas, pandas_to_hf_dataset
 from whisper_prep.generation.data_processor import DataProcessor
 from whisper_prep.generation.generate import generate_fold_from_yaml
 from whisper_prep.utils import parse_args, get_compression_ratio
@@ -28,13 +28,20 @@ def main(config=None):
     config["out_folder"] = out_folder
 
     hu_name = config.get("hu_dataset")
-    if hu_name:
+
+    # Setup paths and folders
+    audio_dir = Path(out_folder, "audios")
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    transcript_dir = Path(out_folder, "transcripts")
+    transcript_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = Path(out_folder, "created_dataset")
+    output_file = Path(output_dir, "data.ljson")
+    dump_dir = Path(output_dir, "dump")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    """ if hu_name:
         ds = load_dataset(hu_name)
         split_ds = ds[split_name]
-        audio_dir = Path(out_folder, "audios")
-        transcript_dir = Path(out_folder, "transcripts")
-        audio_dir.mkdir(parents=True, exist_ok=True)
-        transcript_dir.mkdir(parents=True, exist_ok=True)
         for idx, example in tqdm(
             enumerate(split_ds),
             total=len(split_ds),
@@ -63,14 +70,7 @@ def main(config=None):
                 f.write(srt_text)
     else:
         generate_fold_from_yaml(config)
-        audio_dir = Path(out_folder, "audios")
-        transcript_dir = Path(out_folder, "transcripts")
-
-    output_dir = Path(out_folder, "created_dataset")
-    output_file = Path(output_dir, "data.ljson")
-    dump_dir = Path(output_dir, "dump")
-
-    output_dir.mkdir(parents=True, exist_ok=True)
+   
 
     data_processor = DataProcessor(
         audio_dir=audio_dir,
@@ -79,34 +79,33 @@ def main(config=None):
         dump_dir=dump_dir,
     )
     data_processor.run()
+    """
+    df_dataframe = ljson_to_pandas(json_path=output_file)
+    print(f"Loaded {len(df_dataframe)} samples")
 
-    hf_dataset = ljson_to_hf_dataset(json_path=output_file, split_name=split_name)
-
+    ## Some preprocessing, easy in pandas
     # Make some final checks on the text, text not empty, no duplicates, compression factor < 2.4
-    len_before = len(hf_dataset)
-    # Get indices and examples that do not meet quality checks
-    bad_examples = []
-    for idx, example in enumerate(hf_dataset):
-        if len(example["text"]) <= 8 or get_compression_ratio(example["text"]) >= 2.4:
-            bad_examples.append((idx, example["text"]))
+    high_compressio_ratio = df_dataframe["text"].apply(get_compression_ratio) >= 2.4
+    few_words = df_dataframe["text"].str.split().str.len() <= 8
 
-    # Print out problematic examples
-    if bad_examples:
-        print(f"Found {len(bad_examples)} problematic samples:")
-        for idx, text in bad_examples:
-            print(f"- Index {idx}: {repr(text)}")
+    # Combine them
+    bad_examples_idx = high_compressio_ratio | few_words
 
-    # Filter out problematic examples
-    bad_indices = [idx for idx, _ in bad_examples]
-    hf_dataset = hf_dataset.select(
-        [idx for idx in range(len(hf_dataset)) if idx not in bad_indices]
+    if len(bad_examples_idx) > 0:
+        print(f"Found {len(bad_examples_idx)} problematic samples:")
+        print(df_dataframe[bad_examples_idx].head(15))
+        print(f"Saving them to {Path(out_folder, 'bad_examples.csv')}")
+        df_dataframe[bad_examples_idx].to_csv(
+            Path(out_folder, "bad_examples.csv"), sep="\t"
+        )
+
+        # Remove them
+        df_dataframe = df_dataframe[~bad_examples_idx]
+    # Convert to HF dataset
+    hf_dataset = pandas_to_hf_dataset(
+        train_meta_file=df_dataframe, split_name=split_name
     )
 
-    # Confirm removal
-    if bad_examples:
-        print(
-            f"Removed {len_before - len(hf_dataset)} samples due to text quality issues."
-        )
     # Save to disk
     hf_folder = Path(out_folder, "hf")
     hf_folder.mkdir(parents=True, exist_ok=True)
