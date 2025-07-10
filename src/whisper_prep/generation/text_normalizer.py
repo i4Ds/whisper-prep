@@ -1,4 +1,17 @@
 import re
+import unicodedata
+
+APOS_TABLE = str.maketrans(
+    {
+        "’": "'",  # curly
+        "‘": "'",  # curly left (rare)
+        "ˊ": "'",  # modifier acute
+        "ˋ": "'",  # modifier grave (folds to ` with NFKC)
+        "ʹ": "'",  # modifier prime
+        "＇": "'",  # full-width
+        "`": "'",  # optional: treat back-tick as apostrophe
+    }
+)
 
 
 def remove_keywords_with_brackets(
@@ -35,7 +48,7 @@ def normalize_abbrv(text):
         "Sek.": "Sekunden",
         "Jr.": "Jahr",
         "Tg.": "Tage",
-        "m ü.M.": "Meter über Meer",
+        "m ü. M.": "Meter über Meer",
         "u.a.": "unter anderem",
         "sog.": "sogenannte",
         "bzw.": "beziehungsweise",
@@ -75,7 +88,7 @@ def normalize_abbrv(text):
         "ähm": "",
     }
     for abbr, full in abbreviation_map.items():
-        pattern = re.compile(rf"(^|\s)({re.escape(abbr)})(?=\s|$)")
+        pattern = re.compile(rf"(^|\s)({re.escape(abbr)})(?=\s|$)", re.IGNORECASE)
         text = pattern.sub(lambda m: m.group(1) + full, text)
     return text
 
@@ -99,8 +112,6 @@ def standardize_text(text: str) -> str:
         "«": "",
         "»": "",
         "„": "",  # Remove additional types of quotation marks
-        "(": "",
-        ")": "",  # Remove parentheses
         "- -": "-",  # Replace double hyphens with a single hyphen
         "–": "-",
         "—": "-",  # Normalize en-dash and em-dash to hyphen
@@ -110,10 +121,6 @@ def standardize_text(text: str) -> str:
     # Apply replacements
     for original, replacement in replacements.items():
         text = text.replace(original, replacement)
-
-    # Normalize multiple spaces to a single space, including handling cases where multiple spaces may form
-    text = re.sub(r"\s{2,}", " ", text).strip()
-
     return text
 
 
@@ -306,6 +313,8 @@ class GermanNumberConverter:
 
 
 def normalize_text(text):
+    text = unicodedata.normalize("NFKC", text)
+    text = text.translate(APOS_TABLE)
     text = remove_bracketed_text(text)
     text = normalize_triple_dots(text)
     text = normalize_abbrv(text)
@@ -313,4 +322,5 @@ def normalize_text(text):
     text = standardize_text(text)
     converter = GermanNumberConverter()
     text = converter.convert(text)
+    text = re.sub(r"\s{2,}", " ", text).strip()
     return text

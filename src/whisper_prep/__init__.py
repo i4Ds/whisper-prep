@@ -5,7 +5,7 @@ import yaml
 from whisper_prep.dataset.convert import ljson_to_pandas, pandas_to_hf_dataset
 from whisper_prep.generation.data_processor import DataProcessor
 from whisper_prep.generation.generate import generate_fold_from_yaml
-from whisper_prep.utils import parse_args, get_compression_ratio
+from whisper_prep.utils import parse_args, get_compression_ratio, is_french
 
 from datasets import load_dataset
 from tqdm.auto import tqdm
@@ -101,6 +101,18 @@ def main(config=None):
 
         # Remove them
         df_dataframe = df_dataframe[~bad_examples_idx]
+
+    # Filter out french
+    if config.get("filter_french", False):
+        french_idx = df_dataframe["text"].apply(is_french)
+        if len(french_idx) > 0:
+            print(f"Found {sum(french_idx)} French samples")
+            print(f"Saving them to {Path(out_folder, 'french_examples.csv')}")
+            df_dataframe[french_idx].to_csv(
+                Path(out_folder, "french_examples.csv"), sep="\t"
+            )
+            df_dataframe = df_dataframe[~french_idx]
+
     # Convert to HF dataset
     hf_dataset = pandas_to_hf_dataset(
         train_meta_file=df_dataframe, split_name=split_name

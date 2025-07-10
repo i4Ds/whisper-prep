@@ -10,8 +10,8 @@ from tqdm import tqdm
 from whisper.audio import load_audio
 from whisper.tokenizer import LANGUAGES, TO_LANGUAGE_CODE, get_tokenizer
 from whisper.utils import format_timestamp
-
 from whisper_prep.generation.typing import PromptNode, Record, Utterance
+from whisper_prep.generation.text_normalizer import normalize_text
 
 DURATION = 30000  # 30 seconds in milliseconds
 SAMPLE_RATE = 16000
@@ -33,12 +33,13 @@ class DataProcessor:
         output: str = "data.json",
         dump_dir: str = "dump",
         timestamp_resolution: int = 20,
-        max_prompt_length: int = 223, # 223 tokens and some extra for the time stamps.
+        max_prompt_length: int = 223,  # 223 tokens and some extra for the time stamps.
         max_tokens_length: int = 219,
         subsampling_factor_for_silence: int = 1,
         rep_threshold: int = 3,
         tokenizer_type: str = "multilingual",
         normalize_unicode: bool = False,
+        german_normalizer: bool = False,
     ) -> None:
         self.with_timestamps = with_timestamps
         self.audio_dir = audio_dir
@@ -55,6 +56,7 @@ class DataProcessor:
         self.rep_threshold = rep_threshold
         self.tokenizer_type = tokenizer_type
         self.normalize_unicode = normalize_unicode
+        self.german_normalizer = german_normalizer
 
         self._verify_args()
 
@@ -109,6 +111,8 @@ class DataProcessor:
                 audio_path, text = line.strip().split("\t")
                 if self.normalize_unicode:
                     text = unicodedata.normalize("NFKC", text)
+                if self.german_normalizer:
+                    text = normalize_text(text)
 
                 tokens = self.tokenizer.encode(text)
                 if len(tokens) > self.max_tokens_length:

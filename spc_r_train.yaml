@@ -9,3 +9,6 @@ hu_dataset: i4ds/spc_r  # Optional HuggingFace dataset identifier with 'audio' a
 # Upload to HuggingFace
 upload_to_hu: true # Whether to upload the dataset to HuggingFace
 hu_repo: i4ds/spc_r_whisper # HuggingFace repository identifier
+
+# Settings
+filter_french: true # Whether to filter out French audio files
