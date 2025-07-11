@@ -5,10 +5,16 @@ import yaml
 from whisper_prep.dataset.convert import ljson_to_pandas, pandas_to_hf_dataset
 from whisper_prep.generation.data_processor import DataProcessor
 from whisper_prep.generation.generate import generate_fold_from_yaml
-from whisper_prep.utils import parse_args, get_compression_ratio, is_french
+from whisper_prep.utils import (
+    parse_args,
+    get_compression_ratio,
+    is_french,
+    netflix_normalize_all_srts_in_folder,
+)
 
-from datasets import load_dataset
+from datasets import load_dataset, concatenate_datasets
 from tqdm.auto import tqdm
+import shutil
 
 
 def main(config=None):
@@ -27,20 +33,25 @@ def main(config=None):
 
     config["out_folder"] = out_folder
 
-    hu_name = config.get("hu_dataset")
+    hu_names = config.get("hu_datasets")
 
     # Setup paths and folders
     audio_dir = Path(out_folder, "audios")
     audio_dir.mkdir(parents=True, exist_ok=True)
     transcript_dir = Path(out_folder, "transcripts")
     transcript_dir.mkdir(parents=True, exist_ok=True)
+    # Create output folder
     output_dir = Path(out_folder, "created_dataset")
     output_file = Path(output_dir, "data.ljson")
     dump_dir = Path(output_dir, "dump")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    """ if hu_name:
-        ds = load_dataset(hu_name)
+    """    if hu_names:
+        # Combine all datasets and select overlapping columns. Something will raise an error...
+        datasets = [load_dataset(hu_name) for hu_name in hu_names]
+        overlapping_cols = set.intersection(*[set(ds.column_names) for ds in datasets])
+        datasets = [ds.select_columns(sorted(overlapping_cols)) for ds in datasets]
+        ds = concatenate_datasets(datasets)
         split_ds = ds[split_name]
         for idx, example in tqdm(
             enumerate(split_ds),
@@ -68,18 +79,35 @@ def main(config=None):
             srt_file = transcript_dir / f"{dest.stem}.srt"
             with open(srt_file, "w", encoding="utf-8") as f:
                 f.write(srt_text)
+    elif config.get("srt_folders"):
+        # Move all files there into the transcript folder
+        # ── copy & rename every .srt ──────────────────────────────────────────────
+        for folder in config["srt_folders"]:
+            for src in Path(folder).glob("*.srt"):
+                dest_name = f"{src.parent.name}_{src.name}"  # e.g. Club_SRT.srt
+                shutil.copy2(src, transcript_dir / dest_name)  # preserves metadata
+
+        # ── copy & rename every .mp3 ──────────────────────────────────────────────
+        for folder in config["audio_folders"]:
+            for src in Path(folder).glob("*.mp3"):
+                dest_name = f"{src.parent.name}_{src.name}"  # e.g. Club_track.mp3
+                shutil.copy2(src, audio_dir / dest_name)
     else:
         generate_fold_from_yaml(config)
-   
+    """
+
+    # Preprocessing of SRT with netflix rules.
+    netflix_normalize_all_srts_in_folder(transcript_dir)
 
     data_processor = DataProcessor(
         audio_dir=audio_dir,
         transcript_dir=transcript_dir,
         output=output_file,
         dump_dir=dump_dir,
+        german_normalizer=config.get("german_normalizer", False),
     )
     data_processor.run()
-    """
+
     df_dataframe = ljson_to_pandas(json_path=output_file)
     print(f"Loaded {len(df_dataframe)} samples")
 

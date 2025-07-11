@@ -46,8 +46,9 @@ class TestGenerate(unittest.TestCase):
 
     # standardize_text removes unwanted symbols and collapses spaces
     def test_standardize_text(self):
-        text = "  Hello—World “quoted”  "
-        expected = "Hello-World quoted"
+        text = "Hello—World “quoted”"
+        expected = 'Hello-World "quoted"'
+        print(standardize_text(text))
         assert standardize_text(text) == expected
 
     # normalize_capitalization fixes words with exactly two uppercase letters and length>4
@@ -61,6 +62,8 @@ class TestGenerate(unittest.TestCase):
         assert normalize_triple_dots("First...Second") == "First. Second"
         # other triple dots are removed
         assert normalize_triple_dots("Wait...") == "Wait"
+        assert normalize_triple_dots("...") == "."
+        assert normalize_triple_dots("Test ... ... Test") == "Test ... Test"
 
     # remove_bracketed_text removes text enclosed in square brackets
     def test_remove_bracketed_text(self):

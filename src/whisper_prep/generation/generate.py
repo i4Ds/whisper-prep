@@ -15,6 +15,7 @@ from whisper_prep.audio.vad import silero_vad_collector
 from whisper_prep.dataset.convert import combine_tsvs_to_dataframe
 from whisper_prep.subtitling.srt import Caption, generate_srt
 from whisper_prep.generation.text_normalizer import normalize_text as normalize_text_
+from whisper_prep.utils import NETFLIX_CHAR, NETFLIX_DUR
 
 
 def _get_number_of_rows(speaker_groups) -> int:
@@ -129,7 +130,10 @@ def _generate(
             current_seg_start = start_second - overlap_move + offset
         # Create and add captions for each segment
         # If the netflix rules are reached or the next speaker is not the same, fuse captions.
-        if len(combined_text) > 42 or current_seg_dur > 7:
+        # Fix to make sure that every sentence causes a new caption.
+        # This is because normalization was moved to the SRT nornmalization, so that sentence level datasets
+        # And srt sources are the same. This should be fixed.
+        if len(combined_text) >= 0 or current_seg_dur >= 0:
             caption = Caption(
                 start_second=current_seg_start,
                 end_second=offset + end_second - overlap_move,

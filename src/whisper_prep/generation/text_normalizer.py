@@ -101,26 +101,58 @@ def standardize_text(text: str) -> str:
     - Collapses multiple spaces into a single space.
     """
     # Define replacements for specific Unicode and typographic characters
-    replacements = {
-        "\u00ad": "",  # Remove soft hyphen
+    REPLACEMENTS = {
+        # –––– Invisible / spacing chars ––––––––––––––––––––––––––––––––––––––––
+        "\u00a0": " ",  # NO-BREAK SPACE → plain space
+        "\u202f": " ",  # NARROW NO-BREAK SPACE → space
+        "\u200b": "",  # ZERO-WIDTH SPACE
+        "\u200c": "",  # ZERO-WIDTH NON-JOINER
+        "\u200d": "",  # ZERO-WIDTH JOINER
+        "\u2060": "",  # WORD-JOINER
+        # –––– Quotes & apostrophes –––––––––––––––––––––––––––––––––––––––––––––
+        "‘": "'",
+        "’": "'",
+        "‚": "'",
+        "‛": "'",
+        "“": '"',
+        "”": '"',
+        "«": '"',
+        "»": '"',
+        "„": '"',
+        "‟": '"',
+        # –––– Dashes & hyphens ––––––––––––––––––––––––––––––––––––––––––––––––
+        "-": "-",  # NON-BREAKING HYPHEN
+        "–": "-",  # EN-DASH
+        "—": "-",  # EM-DASH
+        "−": "-",  # MINUS SIGN
+        "--": "-",  # double NB-hyphen → single
+        # –––– Ellipsis ––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+        "…": "...",
+        # –––– Ligatures & spelling variants –––––––––––––––––––––––––––––––––––
+        "ﬁ": "fi",
+        "ﬂ": "fl",
+        "ﬀ": "ff",
         "ß": "ss",
-        "/, ": "",  # Handle cases like 'Renter/, innen' mentioned in the comments
-        "‘": "",
-        "’": "",
-        "“": "",
-        "”": "",  # Remove different types of quotation marks
-        "«": "",
-        "»": "",
-        "„": "",  # Remove additional types of quotation marks
-        "- -": "-",  # Replace double hyphens with a single hyphen
-        "–": "-",
-        "—": "-",  # Normalize en-dash and em-dash to hyphen
-        '"': "",  # Remove double quotes
+        # –––– Bullets & list marks ––––––––––––––––––––––––––––––––––––––––––––
+        "•": "-",
+        "·": "-",
+        # –––– Accidental markup leftovers ––––––––––––––––––––––––––––––––––––
+        "<i>": "",
+        "</i>": "",
+        "<b>": "",
+        "</b>": "",
+        # –––– Catch-alls you already had ––––––––––––––––––––––––––––––––––––––
+        "\u00ad": "",  # SOFT HYPHEN
+        "- -": "-",  # double hyphen → single
+        "/, ": "",  # "Renter/, innen" → "Renterinnen"
     }
 
     # Apply replacements
-    for original, replacement in replacements.items():
+    for original, replacement in REPLACEMENTS.items():
         text = text.replace(original, replacement)
+
+    # Some other wierd spaces
+    text = re.sub(r"[\u00A0\u202F\u200B\u200C\u200D\u2060]+", " ", text)
     return text
 
 
@@ -284,12 +316,14 @@ class GermanNumberConverter:
         }
 
     def combine_numbers(self, text):
-        # This regex looks for numbers separated by a space where the second number is entirely zero, e.g. 150 000
-        return re.sub(r"(\d+)\s+(0+)(?!\d)", r"\1\2", text)
+        # collapse ISO thin spaces, NBSP, etc. to plain space first
+        text = re.sub(r"[\u00A0\u202F]", " ", text)
 
-    def remove_apostrophes(self, text):
-        # Use regex to remove apostrophes surrounded by digits
-        return re.sub(r"(?<=\d)'(?=\d)", "", text)
+        # remove ONE space between digit groups of exactly three digits
+        text = re.sub(r"(?<=\d)\s(?=\d{3}\b)", "", text)
+
+        # remove apostrophes used the same way (Switzerland)
+        text = re.sub(r"(?<=\d)'(?=\d{3}\b)", "", text)
 
     def replace_komma_w_dot(self, text):
         # Normalizes a comma to a dot for numbers
@@ -301,15 +335,10 @@ class GermanNumberConverter:
             text = text.replace(symbol, word)
         return text
 
-    def convert_number(self, text):
+    def convert_numbers(self, text):
         text = self.replace_currencies(text)
-        text = self.combine_numbers(text)
-        text = self.remove_apostrophes(text)
         text = self.replace_komma_w_dot(text)
         return text
-
-    def convert(self, text):
-        return self.convert_number(text)
 
 
 def normalize_text(text):
@@ -321,6 +350,6 @@ def normalize_text(text):
     text = normalize_capitalization(text)
     text = standardize_text(text)
     converter = GermanNumberConverter()
-    text = converter.convert(text)
+    text = converter.convert_numbers(text)
     text = re.sub(r"\s{2,}", " ", text).strip()
     return text

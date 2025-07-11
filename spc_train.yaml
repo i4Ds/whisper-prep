@@ -25,4 +25,3 @@ max_overlap_duration: 0.3  # Max duration of the overlap in seconds. So if there
 
 # Huggingface upload configuration
 upload_to_hu: True
-hu_dataset_path: 'i4ds/SPC'
