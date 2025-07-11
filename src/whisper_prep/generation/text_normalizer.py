@@ -208,6 +208,8 @@ def remove_bracketed_text(text):
     # Use regex to remove all text between [ and ] including the brackets
     text = re.sub(r"\[.*?\]", "", text).strip()
     text = re.sub(r"\(.*?\)", "", text).strip()
+    # –––– Accidental markup leftovers ––––––––––––––––––––––––––––––––––––
+    text = re.sub(r"</?font[^>]*>", "", text, flags=re.I)
     return text
 
 
