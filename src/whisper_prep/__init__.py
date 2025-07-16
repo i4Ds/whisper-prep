@@ -46,16 +46,17 @@ def main(config=None):
     dump_dir = Path(output_dir, "dump")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    """    if hu_names:
+    if hu_names:
         # Combine all datasets and select overlapping columns. Something will raise an error...
-        datasets = [load_dataset(hu_name) for hu_name in hu_names]
+        datasets = [load_dataset(hu_name, split=split_name) for hu_name in hu_names]
+        print(datasets)
         overlapping_cols = set.intersection(*[set(ds.column_names) for ds in datasets])
+        print(overlapping_cols)
         datasets = [ds.select_columns(sorted(overlapping_cols)) for ds in datasets]
         ds = concatenate_datasets(datasets)
-        split_ds = ds[split_name]
         for idx, example in tqdm(
-            enumerate(split_ds),
-            total=len(split_ds),
+            enumerate(ds),
+            total=len(ds),
             desc=f"Saving audio files to {audio_dir}",
         ):
             audio_field = example.get("audio")
@@ -94,10 +95,10 @@ def main(config=None):
                 shutil.copy2(src, audio_dir / dest_name)
     else:
         generate_fold_from_yaml(config)
-    """
 
     # Preprocessing of SRT with netflix rules.
-    netflix_normalize_all_srts_in_folder(transcript_dir)
+    if config.get("netflix_normalize", False):
+        netflix_normalize_all_srts_in_folder(transcript_dir)
 
     data_processor = DataProcessor(
         audio_dir=audio_dir,

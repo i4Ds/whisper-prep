@@ -126,3 +126,8 @@ def netflix_normalize_all_srts_in_folder(folder: str = ".") -> None:
     """One-liner helper: normalize all .srt files in *folder*."""
     for file in glob(os.path.join(folder, "*.srt")):
         normalize_file(file)
+
+
+if __name__ == "__main__":
+
+    netflix_normalize_all_srts_in_folder("src/whisper_prep/")
