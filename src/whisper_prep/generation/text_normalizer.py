@@ -86,6 +86,11 @@ def normalize_abbrv(text):
         "Mio.": "Millionen",
         "Mia.": "Milliarden",
         "ähm": "",
+        "äh": "",
+        "hm": "",
+        "hm...": "",
+        "Öhh...": "",
+        "Öhh": "",
     }
     for abbr, full in abbreviation_map.items():
         pattern = re.compile(rf"(^|\s)({re.escape(abbr)})(?=\s|$)", re.IGNORECASE)
@@ -208,6 +213,7 @@ def remove_bracketed_text(text):
     # Remove text enclosed in square brackets or parentheses, including the brackets
     text = re.sub(r"\[.*?\]", "", text)
     text = re.sub(r"\(.*?\)", "", text)
+    text = re.sub(r"\*.*?\*", "", text)
     # Strip <font> tags, preserving inner text
     text = re.sub(r"</?font[^>]*>", "", text, flags=re.I)
     return text.strip()
@@ -287,6 +293,7 @@ class GermanNumberConverter:
             "₯": "Drachme",
             "₰": "Pfennig",
             "₷": "Speciedaler",
+            "%": "Prozent",
             "Fr.": "Franken",
             "CHF": "Franken",
             "USD": "Dollar",
@@ -338,16 +345,26 @@ class GermanNumberConverter:
         return text
 
     def convert_numbers(self, text):
-        # Convert fractions (1⁄2 or 1/2) to decimal (EDV style)
+        # Unify number separators: thin/non-breaking spaces and apostrophes
+        text = re.sub(r"[\u00A0\u202F]", " ", text)
+        text = re.sub(r"(?<=\d)[ '\u00A0](?=\d{3}\b)", "", text)
+
+        # Convert fractions (1⁄2 or 1/2) to decimal
         def _frac(m):
             num, den = int(m.group(1)), int(m.group(2))
             return str(num / den)
         text = re.sub(r"(\d+)[⁄/](\d+)", _frac, text)
         text = self.replace_currencies(text)
         text = self.replace_komma_w_dot(text)
-        # EDV style: apostrophe for thousand grouping, dot as decimal
-        # Replace spaces (ASCII or NBSP) between digit groups with apostrophe
-        text = re.sub(r"(?<=\d)(?:[ \u00A0])(?=\d{3}\b)", "'", text)
+
+        # Group integer numbers into thousands using apostrophes and preserve decimals
+        def _group_num(m: re.Match) -> str:
+            integer = m.group(1)
+            fraction = m.group(2) or ""
+            grouped = f"{int(integer):,}".replace(",", "'")
+            return grouped + fraction
+
+        text = re.sub(r"\b(\d+)(\.\d+)?\b", _group_num, text)
         return text
     
     def convert(self, text):
@@ -358,10 +375,8 @@ class GermanNumberConverter:
 def normalize_text(text):
     text = unicodedata.normalize("NFKC", text)
     text = text.translate(APOS_TABLE)
-    text = remove_bracketed_text(text)
     # Remove HTML font markup including content wrapped in <font>…</font>
-    text = re.sub(r"<font[^>]*>.*?</font>", "", text, flags=re.I | re.S)
-    text = re.sub(r"</?font[^>]*>", "", text, flags=re.I)
+    text = remove_bracketed_text(text)
     text = normalize_triple_dots(text)
     text = normalize_abbrv(text)
     text = normalize_capitalization(text)

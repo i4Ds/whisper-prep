@@ -68,6 +68,7 @@ class TestGenerate(unittest.TestCase):
     def test_remove_bracketed_text(self):
         assert remove_bracketed_text("Keep [remove this] text") == "Keep  text"
         assert remove_bracketed_text("Keep (remove this) text") == "Keep  text"
+        assert remove_bracketed_text("<font color='#fff'>* Hallo *</font>") == ""
         assert remove_bracketed_text("<font color='#fff'>Jauchzer</font>") == "Jauchzer"
         assert remove_bracketed_text("Keep <font color='#fff'>Jauchzer</font> text") == "Keep Jauchzer text"
 
@@ -103,10 +104,12 @@ class TestGenerate(unittest.TestCase):
         # EDV style: apostrophe grouping & decimal point
         text = "150 000 3000 1,234 $"
         assert converter.convert(text) == "150'000 3'000 1.234 Dollar"
+        assert converter.convert("1 000 000 $") == "1'000'000 Dollar"
         assert converter.convert("1 000,50 €") == "1'000.50 Euro"
         assert converter.convert("1000,50 €") == "1'000.50 Euro"
         assert converter.convert("10,3 Mio.") == "10.3 Mio."
         assert converter.convert("14,25 %") == "14.25 Prozent"
+        assert converter.convert("14,23") == "14.23"
         # Fraction slash and slash fractions
         assert converter.convert("1⁄2") == "0.5"
 
