@@ -48,7 +48,6 @@ class TestGenerate(unittest.TestCase):
     def test_standardize_text(self):
         text = "Hello—World “quoted”"
         expected = 'Hello-World "quoted"'
-        print(standardize_text(text))
         assert standardize_text(text) == expected
 
     # normalize_capitalization fixes words with exactly two uppercase letters and length>4
@@ -69,6 +68,8 @@ class TestGenerate(unittest.TestCase):
     def test_remove_bracketed_text(self):
         assert remove_bracketed_text("Keep [remove this] text") == "Keep  text"
         assert remove_bracketed_text("Keep (remove this) text") == "Keep  text"
+        assert remove_bracketed_text("<font color='#fff'>Jauchzer</font>") == "Jauchzer"
+        assert remove_bracketed_text("Keep <font color='#fff'>Jauchzer</font> text") == "Keep Jauchzer text"
 
     # tokenize splits text into tokens, treating '...' as standalone token
     def test_tokenize(self):
@@ -92,7 +93,6 @@ class TestGenerate(unittest.TestCase):
         assert collapse_text(" ".join(tokens)) == "... Triage"
 
         text = "Heute gehen wir an den See ... See ... See ... See ... See"
-        print(collapse_text(text))
         assert collapse_text(text) == "Heute gehen wir an den See ... See"
         text = "Heute gehen wir an den See und Baden da! Jawohl, es ist sonnig."
         assert collapse_text(text) == text

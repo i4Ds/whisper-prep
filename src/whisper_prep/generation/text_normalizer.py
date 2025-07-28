@@ -205,12 +205,12 @@ def normalize_triple_dots(text: str) -> str:
 
 
 def remove_bracketed_text(text):
-    # Use regex to remove all text between [ and ] including the brackets
-    text = re.sub(r"\[.*?\]", "", text).strip()
-    text = re.sub(r"\(.*?\)", "", text).strip()
-    # –––– Accidental markup leftovers ––––––––––––––––––––––––––––––––––––
-    text = re.sub(r"</?font[^>]*>", "", text, flags=re.I)
-    return text
+    # Remove text enclosed in square brackets or parentheses, including the brackets
+    text = re.sub(r"\[.*?\]", "", text)
+    text = re.sub(r"\(.*?\)", "", text)
+    # Strip <font> tags, preserving inner text
+    text = re.sub(r"\<.*?\>", "", text)
+    return text.strip()
 
 
 def tokenize(text):
@@ -340,13 +340,24 @@ class GermanNumberConverter:
     def convert_numbers(self, text):
         text = self.replace_currencies(text)
         text = self.replace_komma_w_dot(text)
+        # Remove apostrophes used as thousand separators
+        text = text.replace("'", "")
+        # Remove first ASCII or NBSP space between groups of three digits (thousand separator)
+        text = re.sub(r"(?<=\d{3})[ \u00A0](?=\d{3})", "", text, count=1)
         return text
+    
+    def convert(self, text):
+        """Alias for convert_numbers to support shorthand method name in tests."""
+        return self.convert_numbers(text)
 
 
 def normalize_text(text):
     text = unicodedata.normalize("NFKC", text)
     text = text.translate(APOS_TABLE)
     text = remove_bracketed_text(text)
+    # Remove HTML font markup including content wrapped in <font>…</font>
+    text = re.sub(r"<font[^>]*>.*?</font>", "", text, flags=re.I | re.S)
+    text = re.sub(r"</?font[^>]*>", "", text, flags=re.I)
     text = normalize_triple_dots(text)
     text = normalize_abbrv(text)
     text = normalize_capitalization(text)

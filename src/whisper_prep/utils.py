@@ -26,7 +26,12 @@ def config_path(path: str):
 
 
 def get_compression_ratio(text: str):
-    compression_ratio = len(text) / len(zlib.compress(text.encode("utf-8")))
+    """
+    Compute compression ratio after removing timestamp tokens <|...|> to avoid skew from time markers.
+    """
+    # Strip timestamp tokens before compression measurement
+    cleaned = TAG_RE.sub("", text)
+    compression_ratio = len(cleaned) / len(zlib.compress(cleaned.encode("utf-8")))
     return compression_ratio
 
 
@@ -80,7 +85,7 @@ def fuse_until_limits(
 
     Returns True if *subs* was modified.
     """
-    if not subs:
+    if pysubs2 is None or not subs:
         return False
 
     merged = pysubs2.SSAFile()

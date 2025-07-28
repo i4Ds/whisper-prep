@@ -11,7 +11,7 @@ from whisper.audio import load_audio
 from whisper.tokenizer import LANGUAGES, TO_LANGUAGE_CODE, get_tokenizer
 from whisper.utils import format_timestamp
 from whisper_prep.generation.typing import PromptNode, Record, Utterance
-from whisper_prep.generation.text_normalizer import normalize_text
+from whisper_prep.generation.text_normalizer import normalize_text, remove_keywords_with_brackets
 
 DURATION = 30000  # 30 seconds in milliseconds
 SAMPLE_RATE = 16000
@@ -40,6 +40,7 @@ class DataProcessor:
         tokenizer_type: str = "multilingual",
         normalize_unicode: bool = False,
         german_normalizer: bool = False,
+        cut_initial_audio: bool = False,
     ) -> None:
         self.with_timestamps = with_timestamps
         self.audio_dir = audio_dir
@@ -57,6 +58,7 @@ class DataProcessor:
         self.tokenizer_type = tokenizer_type
         self.normalize_unicode = normalize_unicode
         self.german_normalizer = german_normalizer
+        self.cut_initial_audio = cut_initial_audio
 
         self._verify_args()
 
@@ -297,11 +299,12 @@ class DataProcessor:
                         ]
                     ]
                 ).strip()
+                # Skip cues containing only keywords (e.g., stage directions) by removing them
+                text = remove_keywords_with_brackets(text)
                 if normalize_unicode:
                     text = unicodedata.normalize("NFKC", text)
-                if text == "":
-                    # With time-aligned data, empty utterances will be created from timestamps later
-                    # and are not necessary in the first place
+                # Filter out empty utterances
+                if not text:
                     continue
 
                 utterances.append(Utterance(text=text, start=start_time, end=end_time))
@@ -338,11 +341,12 @@ class DataProcessor:
                         ]
                     ]
                 ).strip()
+                # Skip cues containing only keywords (e.g., stage directions) by removing them
+                text = remove_keywords_with_brackets(text)
                 if normalize_unicode:
                     text = unicodedata.normalize("NFKC", text)
-                if text == "":
-                    # With time-aligned data, empty utterances will be created from timestamps later
-                    # and are not necessary in the first place
+                # Filter out empty utterances
+                if not text:
                     continue
 
                 utterances.append(Utterance(text=text, start=start_time, end=end_time))
@@ -357,7 +361,13 @@ class DataProcessor:
         dump_dir.mkdir(parents=True, exist_ok=True)
         records = []
         prompt_buffer: Deque[PromptNode] = deque()
-        segment_start, segment_end = 0, DURATION  # in milliseconds
+        # Optionally trim initial audio to the first subtitle time
+        if self.cut_initial_audio and utterances:
+            initial_start = utterances[0].start
+        else:
+            initial_start = 0
+        segment_start = initial_start
+        segment_end = segment_start + DURATION  # in milliseconds
 
         idx = 0
         while idx < len(utterances):
