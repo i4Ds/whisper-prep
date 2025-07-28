@@ -261,7 +261,7 @@ def collapse_text(text, max_n=3):
     return " ".join(collapse_ngrams(tokenize(text), max_n))
 
 
-class GermanNumberConverter:
+class SwissNumberConverter:
     def __init__(self):
         self.currency_map = {
             "$": "Dollar",
@@ -353,6 +353,7 @@ class GermanNumberConverter:
         def _frac(m):
             num, den = int(m.group(1)), int(m.group(2))
             return str(num / den)
+
         text = re.sub(r"(\d+)[⁄/](\d+)", _frac, text)
         text = self.replace_currencies(text)
         text = self.replace_komma_w_dot(text)
@@ -366,7 +367,7 @@ class GermanNumberConverter:
 
         text = re.sub(r"\b(\d+)(\.\d+)?\b", _group_num, text)
         return text
-    
+
     def convert(self, text):
         """Alias for convert_numbers to support shorthand method name in tests."""
         return self.convert_numbers(text)
@@ -381,7 +382,7 @@ def normalize_text(text):
     text = normalize_abbrv(text)
     text = normalize_capitalization(text)
     text = standardize_text(text)
-    converter = GermanNumberConverter()
+    converter = SwissNumberConverter()
     text = converter.convert_numbers(text)
     text = re.sub(r"\s{2,}", " ", text).strip()
     return text

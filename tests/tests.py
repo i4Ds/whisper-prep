@@ -15,7 +15,7 @@ from whisper_prep.generation.text_normalizer import (
     tokenize,
     collapse_ngrams,
     collapse_text,
-    GermanNumberConverter,
+    SwissNumberConverter,
     normalize_text,
 )
 
@@ -70,7 +70,10 @@ class TestGenerate(unittest.TestCase):
         assert remove_bracketed_text("Keep (remove this) text") == "Keep  text"
         assert remove_bracketed_text("<font color='#fff'>* Hallo *</font>") == ""
         assert remove_bracketed_text("<font color='#fff'>Jauchzer</font>") == "Jauchzer"
-        assert remove_bracketed_text("Keep <font color='#fff'>Jauchzer</font> text") == "Keep Jauchzer text"
+        assert (
+            remove_bracketed_text("Keep <font color='#fff'>Jauchzer</font> text")
+            == "Keep Jauchzer text"
+        )
 
     # tokenize splits text into tokens, treating '...' as standalone token
     def test_tokenize(self):
@@ -98,9 +101,9 @@ class TestGenerate(unittest.TestCase):
         text = "Heute gehen wir an den See und Baden da! Jawohl, es ist sonnig."
         assert collapse_text(text) == text
 
-    # GermanNumberConverter converts numbers, apostrophes, commas, and currency symbols
+    # SwissNumberConverter converts numbers, apostrophes, commas, and currency symbols
     def test_german_number_converter(self):
-        converter = GermanNumberConverter()
+        converter = SwissNumberConverter()
         # EDV style: apostrophe grouping & decimal point
         text = "150 000 3000 1,234 $"
         assert converter.convert(text) == "150'000 3'000 1.234 Dollar"

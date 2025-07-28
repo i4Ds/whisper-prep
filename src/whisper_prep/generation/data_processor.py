@@ -11,7 +11,9 @@ from whisper.audio import load_audio
 from whisper.tokenizer import LANGUAGES, TO_LANGUAGE_CODE, get_tokenizer
 from whisper.utils import format_timestamp
 from whisper_prep.generation.typing import PromptNode, Record, Utterance
-from whisper_prep.generation.text_normalizer import normalize_text, remove_keywords_with_brackets
+from whisper_prep.generation.text_normalizer import (
+    remove_keywords_with_brackets,
+)
 
 DURATION = 30000  # 30 seconds in milliseconds
 SAMPLE_RATE = 16000
@@ -39,7 +41,6 @@ class DataProcessor:
         rep_threshold: int = 3,
         tokenizer_type: str = "multilingual",
         normalize_unicode: bool = False,
-        german_normalizer: bool = False,
         cut_initial_audio: bool = False,
     ) -> None:
         self.with_timestamps = with_timestamps
@@ -57,7 +58,6 @@ class DataProcessor:
         self.rep_threshold = rep_threshold
         self.tokenizer_type = tokenizer_type
         self.normalize_unicode = normalize_unicode
-        self.german_normalizer = german_normalizer
         self.cut_initial_audio = cut_initial_audio
 
         self._verify_args()
@@ -113,8 +113,6 @@ class DataProcessor:
                 audio_path, text = line.strip().split("\t")
                 if self.normalize_unicode:
                     text = unicodedata.normalize("NFKC", text)
-                if self.german_normalizer:
-                    text = normalize_text(text)
 
                 tokens = self.tokenizer.encode(text)
                 if len(tokens) > self.max_tokens_length:

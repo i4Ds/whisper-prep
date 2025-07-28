@@ -12,4 +12,5 @@ hu_repo: i4ds/spc_r_whisper # HuggingFace repository identifier
 
 # Settings
 filter_french: true # Whether to filter out French audio files
-german_normalizer: true
+german_normalizer: false
+netflix_normalize: true # Whether to apply Netflix normalization rules to SRT files

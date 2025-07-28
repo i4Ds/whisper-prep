@@ -47,8 +47,12 @@ def main(config=None):
 
     if hu_names:
         datasets_list = [load_dataset(name, split=split_name) for name in hu_names]
-        overlapping_cols = set.intersection(*[set(ds.column_names) for ds in datasets_list])
-        datasets_list = [ds.select_columns(sorted(overlapping_cols)) for ds in datasets_list]
+        overlapping_cols = set.intersection(
+            *[set(ds.column_names) for ds in datasets_list]
+        )
+        datasets_list = [
+            ds.select_columns(sorted(overlapping_cols)) for ds in datasets_list
+        ]
         ds = concatenate_datasets(datasets_list)
         for idx, example in tqdm(
             enumerate(ds), total=len(ds), desc=f"Saving audio files to {audio_dir}"
@@ -96,7 +100,6 @@ def main(config=None):
         transcript_dir=transcript_dir,
         output=output_file,
         dump_dir=dump_dir,
-        german_normalizer=config.get("german_normalizer", False),
     )
     data_processor.run()
 
@@ -116,11 +119,15 @@ def main(config=None):
     if config.get("filter_french", False):
         french_idx = df_dataframe["text"].apply(is_french)
         if french_idx.any():
-            df_dataframe[french_idx].to_csv(Path(out_folder, "french_examples.csv"), sep="\t")
+            df_dataframe[french_idx].to_csv(
+                Path(out_folder, "french_examples.csv"), sep="\t"
+            )
             df_dataframe = df_dataframe[~french_idx]
 
     # Convert to HuggingFace dataset and save
-    hf_dataset = pandas_to_hf_dataset(train_meta_file=df_dataframe, split_name=split_name)
+    hf_dataset = pandas_to_hf_dataset(
+        train_meta_file=df_dataframe, split_name=split_name
+    )
     hf_folder = Path(out_folder, "hf")
     hf_folder.mkdir(parents=True, exist_ok=True)
     hf_dataset.save_to_disk(str(hf_folder))

@@ -15,7 +15,6 @@ from whisper_prep.audio.vad import silero_vad_collector
 from whisper_prep.dataset.convert import combine_tsvs_to_dataframe
 from whisper_prep.subtitling.srt import Caption, generate_srt
 from whisper_prep.generation.text_normalizer import normalize_text as normalize_text_
-from whisper_prep.utils import NETFLIX_CHAR, NETFLIX_DUR
 
 
 def _get_number_of_rows(speaker_groups) -> int:
