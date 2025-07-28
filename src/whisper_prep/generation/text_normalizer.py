@@ -209,7 +209,7 @@ def remove_bracketed_text(text):
     text = re.sub(r"\[.*?\]", "", text)
     text = re.sub(r"\(.*?\)", "", text)
     # Strip <font> tags, preserving inner text
-    text = re.sub(r"\<.*?\>", "", text)
+    text = re.sub(r"</?font[^>]*>", "", text, flags=re.I)
     return text.strip()
 
 
@@ -338,12 +338,16 @@ class GermanNumberConverter:
         return text
 
     def convert_numbers(self, text):
+        # Convert fractions (1⁄2 or 1/2) to decimal (EDV style)
+        def _frac(m):
+            num, den = int(m.group(1)), int(m.group(2))
+            return str(num / den)
+        text = re.sub(r"(\d+)[⁄/](\d+)", _frac, text)
         text = self.replace_currencies(text)
         text = self.replace_komma_w_dot(text)
-        # Remove apostrophes used as thousand separators
-        text = text.replace("'", "")
-        # Remove first ASCII or NBSP space between groups of three digits (thousand separator)
-        text = re.sub(r"(?<=\d{3})[ \u00A0](?=\d{3})", "", text, count=1)
+        # EDV style: apostrophe for thousand grouping, dot as decimal
+        # Replace spaces (ASCII or NBSP) between digit groups with apostrophe
+        text = re.sub(r"(?<=\d)(?:[ \u00A0])(?=\d{3}\b)", "'", text)
         return text
     
     def convert(self, text):

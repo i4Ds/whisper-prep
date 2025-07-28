@@ -100,14 +100,21 @@ class TestGenerate(unittest.TestCase):
     # GermanNumberConverter converts numbers, apostrophes, commas, and currency symbols
     def test_german_number_converter(self):
         converter = GermanNumberConverter()
-        text = "150 000 3'000 1,234 $"
-        assert converter.convert(text) == "150000 3000 1.234 Dollar"
+        # EDV style: apostrophe grouping & decimal point
+        text = "150 000 3000 1,234 $"
+        assert converter.convert(text) == "150'000 3'000 1.234 Dollar"
+        assert converter.convert("1 000,50 €") == "1'000.50 Euro"
+        assert converter.convert("1000,50 €") == "1'000.50 Euro"
+        assert converter.convert("10,3 Mio.") == "10.3 Mio."
+        assert converter.convert("14,25 %") == "14.25 Prozent"
+        # Fraction slash and slash fractions
+        assert converter.convert("1⁄2") == "0.5"
 
     # normalize_text applies full normalization pipeline end-to-end
     def test_normalize_text_integration(self):
         text = "Hallo [remove]ABC... Test z.B. 150 000 €"
         result = normalize_text(text)
-        assert result == "Hallo ABC. Test zum Beispiel 150000 Euro"
+        assert result == "Hallo ABC. Test zum Beispiel 150'000 Euro"
 
 
 if __name__ == "__main__":
