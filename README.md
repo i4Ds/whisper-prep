@@ -50,9 +50,16 @@ This package assists in generating training data for fine-tuning Whisper by synt
    - (Optional) To load data directly from a HuggingFace dataset with `audio` and `srt` columns, set the `hu_dataset` field to the dataset identifier; this will bypass TSV-based generation.
 
 3. **Running the Generation Script:**
-   - Run `whisper_prep -c <path_to_your_yaml_file>`. 
+   - Run `whisper_prep -c <path_to_your_yaml_file>`.
 
-4. **Upload to Huggingface.com:**
+4. **Upload a TSV as an ASR Dataset:**
+   - A helper script `upload_asr_dataset.py` can convert a `.tsv` file (with at least `path` and `sentence` columns) into a Hugging Face ASR dataset and push it to the Hub:
+     ```bash
+     python upload_asr_dataset.py --tsv path/to/data.tsv \
+         --repo_id username/dataset_name --split train
+     ```
+
+5. **Upload to Huggingface.com:**
    - https://huggingface.co/docs/datasets/v1.16.0/upload_dataset.html
 
 

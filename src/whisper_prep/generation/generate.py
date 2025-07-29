@@ -56,6 +56,13 @@ def _generate_wrapper(
 
 
 def _execute_parallel_process(func, args, n_jobs: int) -> list:
+    # For small workloads, run sequentially to avoid multiprocessing overhead
+    if len(args) <= n_jobs:
+        results = []
+        for arg in args:
+            results.append(func(arg))
+        return results
+
     with Pool(n_jobs) as executor:
         results = list(tqdm(executor.imap_unordered(func, args), total=len(args)))
     return results

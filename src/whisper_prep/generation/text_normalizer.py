@@ -261,7 +261,7 @@ def collapse_text(text, max_n=3):
     return " ".join(collapse_ngrams(tokenize(text), max_n))
 
 
-class SwissNumberConverter:
+class GermanNumberConverter:
     def __init__(self):
         self.currency_map = {
             "$": "Dollar",
@@ -382,7 +382,7 @@ def normalize_text(text):
     text = normalize_abbrv(text)
     text = normalize_capitalization(text)
     text = standardize_text(text)
-    converter = SwissNumberConverter()
+    converter = GermanNumberConverter()
     text = converter.convert_numbers(text)
     text = re.sub(r"\s{2,}", " ", text).strip()
     return text
