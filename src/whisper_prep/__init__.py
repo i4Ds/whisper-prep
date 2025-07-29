@@ -134,4 +134,4 @@ def main(config=None):
 
     # Upload to HuggingFace hub if configured
     if config.get("upload_to_hu", False):
-        hf_dataset.push_to_hub(config["hu_repo"])
+        hf_dataset.push_to_hub(config["hu_repo"], private=config["hu_private"])
