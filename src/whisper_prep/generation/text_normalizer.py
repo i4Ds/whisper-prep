@@ -28,6 +28,8 @@ def remove_keywords_with_brackets(
         "Untertitel",
         "ZDF",
         "Amara.org",
+        "Copyright WDR 2021",
+        "NDR live untertitelt",
     ],
 ):
     if any(keyword in text for keyword in keywords):
