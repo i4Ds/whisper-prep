@@ -47,33 +47,34 @@ def main(config=None):
     dump_dir = Path(output_dir, "dump")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. If user provided a TSV of existing transcripts, process directly
-    if transcripts_tsv:
-        # If also using HF datasets, download files first
-        if hu_names:
-            save_hu_dataset_locally(config, audio_dir, transcript_dir)
-    else:
-        # 2. Otherwise, handle HF and/or sentence inputs to generate SRTs if needed
-        if hu_names:
-            tsv_paths = save_hu_dataset_locally(config, audio_dir, transcript_dir)
-            # Sentence-based HF datasets: synthesize SRTs locally
-            if tsv_paths:
-                config["tsv_paths"] = tsv_paths
-                config["clips_folders"] = [str(audio_dir)] * len(tsv_paths)
-                config["partials"] = config.get("partials", [1.0] * len(tsv_paths))
-        # TSV-based sentence inputs: generate SRTs from sentences
-        generate_fold_from_yaml(config)
+    # Step 1: download HF dataset assets (audio + real SRT or sentence TSV) if requested
+    sentence_tsvs = []
+    if hu_names:
+        sentence_tsvs = save_hu_dataset_locally(config, audio_dir, transcript_dir)
 
-    # Preprocessing of SRT with Netflix rules
+    # Step 2: synthesize SRTs from sentences only when needed
+    if not transcripts_tsv:
+        # HF sentence-only datasets → generate SRTs from HF-derived TSVs
+        if sentence_tsvs:
+            config["tsv_paths"] = sentence_tsvs
+            config["clips_folders"] = [str(audio_dir)] * len(sentence_tsvs)
+            config["partials"] = config.get("partials", [1.0] * len(sentence_tsvs))
+            generate_fold_from_yaml(config)
+        # Local sentence-TSV inputs (no HF) → generate SRTs from sentences
+        elif not hu_names:
+            generate_fold_from_yaml(config)
+
+    # Step 3: Netflix-style SRT normalization (optional)
     if config.get("netflix_normalize", False):
         netflix_normalize_all_srts_in_folder(transcript_dir)
 
-    # Cut the srts to the desired length
+    # Step 4: segment & timestamp via DataProcessor
     dp = DataProcessor(
         audio_dir=audio_dir,
         transcript_dir=transcript_dir,
         output=output_file,
         dump_dir=dump_dir,
+        transcripts_tsv=transcripts_tsv,
     )
     dp.run()
 
