@@ -78,16 +78,6 @@ def main(config=None):
             srt_file = transcript_dir / f"{dest.stem}.srt"
             with open(srt_file, "w", encoding="utf-8") as f:
                 f.write(srt_text)
-    elif config.get("srt_folders"):
-        # Copy and rename every .srt and .mp3 into respective folders
-        for folder in config["srt_folders"]:
-            for src in Path(folder).glob("*.srt"):
-                dest_name = f"{src.parent.name}_{src.name}"
-                shutil.copy2(src, transcript_dir / dest_name)
-        for folder in config["audio_folders"]:
-            for src in Path(folder).glob("*.mp3"):
-                dest_name = f"{src.parent.name}_{src.name}"
-                shutil.copy2(src, audio_dir / dest_name)
     else:
         generate_fold_from_yaml(config)
 
