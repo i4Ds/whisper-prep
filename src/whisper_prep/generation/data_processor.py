@@ -14,6 +14,7 @@ from whisper_prep.generation.typing import PromptNode, Record, Utterance
 from whisper_prep.generation.text_normalizer import (
     remove_keywords_with_brackets,
 )
+import csv
 
 DURATION = 30000  # 30 seconds in milliseconds
 SAMPLE_RATE = 16000
@@ -42,6 +43,7 @@ class DataProcessor:
         tokenizer_type: str = "multilingual",
         normalize_unicode: bool = False,
         cut_initial_audio: bool = False,
+        transcripts_tsv: Optional[str] = None,
     ) -> None:
         self.with_timestamps = with_timestamps
         self.audio_dir = audio_dir
@@ -59,6 +61,7 @@ class DataProcessor:
         self.tokenizer_type = tokenizer_type
         self.normalize_unicode = normalize_unicode
         self.cut_initial_audio = cut_initial_audio
+        self.transcripts_tsv = transcripts_tsv
 
         self._verify_args()
 
@@ -69,11 +72,11 @@ class DataProcessor:
 
     def _verify_args(self) -> None:
         if self.with_timestamps:
-            if not self.audio_dir or not self.transcript_dir:
-                raise ValueError(
-                    "`audio_dir` and `transcript_dir` must be set when `with_timestamps` is True"
-                )
-
+            if not self.transcripts_tsv:
+                if not self.audio_dir or not self.transcript_dir:
+                    raise ValueError(
+                        "`audio_dir` and `transcript_dir` must be set when `with_timestamps` is True and no transcripts_tsv provided"
+                    )
             if self.timestamp_resolution % 20 != 0:
                 raise ValueError(
                     "`timestamps_resolution` must be multiples of 20ms. "
@@ -224,6 +227,42 @@ class DataProcessor:
         return sanitized_utterances
 
     def _process_with_timestamps(self) -> None:
+        if self.transcripts_tsv:
+            with open(self.transcripts_tsv, encoding="utf-8") as tsvfile:
+                reader = csv.DictReader(tsvfile, delimiter="\t")
+                for row in tqdm(reader, desc="Processing TSV transcripts"):
+                    srt_path = Path(row["srt_path"])
+                    audio_path = Path(row["audio_path"])
+                    speech_id = row.get("id") or audio_path.stem
+                    orig_lang = self.language
+                    self.language = row.get("language") or self.language
+                    try:
+                        if srt_path.suffix == ".srt":
+                            utterances = self.read_utterances_from_srt(
+                                srt_path, self.normalize_unicode
+                            )
+                        elif srt_path.suffix == ".vtt":
+                            utterances = self.read_utterances_from_vtt(
+                                srt_path, self.normalize_unicode
+                            )
+                        else:
+                            raise ValueError(
+                                f"Unsupported transcript format: {srt_path.suffix}"
+                            )
+                        if not self._is_valid_utterances(utterances, 0):
+                            utterances = self._sanitize_utterances(utterances)
+                        records = self._create_records_with_timestamps(
+                            utterances, audio_path, speech_id
+                        )
+                        self.write_records(records, self.output)
+                    except Exception as e:
+                        print(e)
+                        print(
+                            f"Skipping {srt_path} due to an error in the transcript"
+                        )
+                    finally:
+                        self.language = orig_lang
+            return
         audio_paths = list(Path(self.audio_dir).iterdir())
 
         for audio_path in tqdm(audio_paths):
@@ -352,16 +391,19 @@ class DataProcessor:
         return utterances
 
     def _create_records_with_timestamps(
-        self, utterances: List[Utterance], audio_path: Path
+        self,
+        utterances: List[Utterance],
+        audio_path: Path,
+        speech_id: Optional[str] = None,
     ) -> List[Record]:
         audio = torch.tensor(load_audio(audio_path))
-        dump_dir = Path(self.dump_dir) / audio_path.stem
+        dump_dir = Path(self.dump_dir) / (speech_id if speech_id else audio_path.stem)
         dump_dir.mkdir(parents=True, exist_ok=True)
         records = []
         prompt_buffer: Deque[PromptNode] = deque()
-        # Optionally trim initial audio to the first subtitle time
+        # Optionally trim initial audio to one second before the first subtitle time
         if self.cut_initial_audio and utterances:
-            initial_start = utterances[0].start
+            initial_start = max(0, utterances[0].start - 1000)
         else:
             initial_start = 0
         segment_start = initial_start

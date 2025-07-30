@@ -6,7 +6,11 @@ from fastlid import fastlid
 import pysubs2
 from glob import glob
 import os
-
+from datasets import load_dataset, concatenate_datasets
+from tqdm.auto import tqdm
+from datasets import load_dataset, concatenate_datasets
+from tqdm.auto import tqdm
+from whisper_prep.dataset.convert import ljson_to_pandas, pandas_to_hf_dataset
 
 NETFLIX_CHAR = 42
 NETFLIX_DUR = 7
@@ -132,6 +136,66 @@ def netflix_normalize_all_srts_in_folder(folder: str = ".") -> None:
     for file in glob(os.path.join(folder, "*.srt")):
         normalize_file(file)
 
+def save_hu_dataset_locally(config, audio_dir, transcript_dir):
+    """Save HuggingFace dataset examples locally as audio and SRT or collect sentences.
+    Returns list of TSV paths for sentence-based entries.
+    """
+    split_name = config["split_name"]
+    out_folder = config["out_folder"]
+
+    hu_names = config['hu_datasets']
+
+
+    datasets_list = [load_dataset(name, split=split_name) for name in hu_names]
+    overlapping_cols = set.intersection(
+        *[set(ds.column_names) for ds in datasets_list]
+    )
+    datasets_list = [
+        ds.select_columns(sorted(overlapping_cols)) for ds in datasets_list
+    ]
+    ds = concatenate_datasets(datasets_list)
+    sentence_entries = []
+    for idx, example in tqdm(
+        enumerate(ds), total=len(ds), desc=f"Saving examples to {audio_dir}"
+    ):
+        audio_field = example.get("audio")
+        if isinstance(audio_field, dict) and "array" in audio_field and "sampling_rate" in audio_field:
+            import soundfile as sf
+
+            audio_id = example.get("id", idx)
+            dest = audio_dir / f"{audio_id}.mp3"
+            sf.write(str(dest), audio_field["array"], audio_field["sampling_rate"])
+        else:
+            raise ValueError(f"Could not handle audio field {audio_field}")
+
+        srt_text = example.get("srt")
+        if srt_text is not None:
+            srt_file = transcript_dir / f"{dest.stem}.srt"
+            with open(srt_file, "w", encoding="utf-8") as f:
+                f.write(srt_text)
+        else:
+            text = example.get("sentence") or example.get("text")
+            if text is None:
+                raise ValueError(
+                    "Sentence-based dataset entry missing 'sentence' or 'text' column"
+                )
+            client_id = example.get("client_id", example.get("speaker_id", "")) or ""
+            sentence_entries.append(
+                {"path": dest.name, "sentence": text, "client_id": client_id}
+            )
+    tsv_paths = []
+    if sentence_entries:
+        import csv
+
+        tsv_file = Path(out_folder, "hf_sentences.tsv")
+        with open(tsv_file, "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(
+                f, delimiter="\t", fieldnames=["path", "sentence", "client_id"]
+            )
+            writer.writeheader()
+            writer.writerows(sentence_entries)
+        tsv_paths.append(str(tsv_file))
+    return tsv_paths
 
 if __name__ == "__main__":
 

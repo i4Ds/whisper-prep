@@ -8,6 +8,7 @@ tsv_paths: ["tests/assets/tsv-data-example/export_20211220_sample_10utterances c
 clips_folders: ["tests/assets/tsv-data-example/clips"]
 partials: [1.0] # Proportion of each dataset to use (e.g. 0.5 will use 50% of the dataset)
 hu_datasets: null  # Optional HuggingFace dataset identifier with 'audio' and 'srt' columns; overrides TSV inputs if set
+transcripts_tsv: null  # Optional TSV with columns srt_path, audio_path, language, id for processing existing transcripts
 
 # Generation configuration
 maintain_speaker_chance: 0.5 # Probability of keeping the same speaker for consecutive utterances

@@ -44,10 +44,20 @@ This package assists in generating training data for fine-tuning Whisper by synt
      - `sentence`: The text corresponding to the audio file.
    - Optional: If a `client_id` is included, it can be used to increase the probability that following sentences are from the same speaker. Refer to `generate_fold` in `src/whisper_prep/generation/generate.py` for additional features.
 
+1a. **Timestamp-based TSV (.tsv):**
+   - Create a `.tsv` file with four required columns:
+     - `srt_path`: Path to the `.srt` file containing subtitles.
+     - `language`: ISO language code for the subtitles (e.g., `de`, `en`).
+     - `id`: Unique identifier for the audio/transcript pair.
+     - `audio_path`: Path to the corresponding `.mp3` file.
+   - This TSV can be used to process existing SRT transcripts and audio files without directory globbing.
+
 2. **Configuration File (.yaml):**
    - Set up a `.yaml` configuration file. An example can be found at `example.yaml`.
   
-   - (Optional) To load data directly from a HuggingFace dataset with `audio` and `srt` columns, set the `hu_dataset` field to the dataset identifier; this will bypass TSV-based generation.
+   - (Optional) To load data directly from a HuggingFace dataset with `audio` and `srt` columns, set the `hu_dataset` field to the dataset identifier; this will bypass TSV-based generation and process existing subtitles. For sentence-based datasets without an `srt` column, synthetic SRT files will be generated from the sentences.
+  
+   - (Optional) To process existing SRT files and audio paths without directory globbing, specify a TSV via `transcripts_tsv`. The TSV must include columns `srt_path`, `audio_path`, `language`, and `id` to map each transcript to its audio file and language.
 
 3. **Running the Generation Script:**
    - Run `whisper_prep -c <path_to_your_yaml_file>`.

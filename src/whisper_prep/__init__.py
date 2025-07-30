@@ -9,6 +9,7 @@ from whisper_prep.utils import (
     get_compression_ratio,
     is_french,
     netflix_normalize_all_srts_in_folder,
+    save_hu_dataset_locally
 )
 
 
@@ -34,6 +35,7 @@ def main(config=None):
     config["out_folder"] = out_folder
 
     hu_names = config.get("hu_datasets")
+    transcripts_tsv = config.get("transcripts_tsv")
 
     # Setup paths and folders
     audio_dir = Path(out_folder, "audios")
@@ -45,53 +47,35 @@ def main(config=None):
     dump_dir = Path(output_dir, "dump")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    if hu_names:
-        datasets_list = [load_dataset(name, split=split_name) for name in hu_names]
-        overlapping_cols = set.intersection(
-            *[set(ds.column_names) for ds in datasets_list]
-        )
-        datasets_list = [
-            ds.select_columns(sorted(overlapping_cols)) for ds in datasets_list
-        ]
-        ds = concatenate_datasets(datasets_list)
-        for idx, example in tqdm(
-            enumerate(ds), total=len(ds), desc=f"Saving audio files to {audio_dir}"
-        ):
-            audio_field = example.get("audio")
-            # handle array+rate case or file path
-            if (
-                isinstance(audio_field, dict)
-                and "array" in audio_field
-                and "sampling_rate" in audio_field
-            ):
-                import soundfile as sf
-
-                base = example.get("id", idx)
-                dest = audio_dir / f"{base}.mp3"
-                sf.write(str(dest), audio_field["array"], audio_field["sampling_rate"])
-            else:
-                raise ValueError(f"Could not handle audio field {audio_field}")
-
-            srt_text = example.get("srt")
-            if srt_text is None:
-                raise ValueError("Dataset entry missing 'srt' column")
-            srt_file = transcript_dir / f"{dest.stem}.srt"
-            with open(srt_file, "w", encoding="utf-8") as f:
-                f.write(srt_text)
+    # 1. If user provided a TSV of existing transcripts, process directly
+    if transcripts_tsv:
+        # If also using HF datasets, download files first
+        if hu_names:
+            save_hu_dataset_locally(config, audio_dir, transcript_dir)
     else:
+        # 2. Otherwise, handle HF and/or sentence inputs to generate SRTs if needed
+        if hu_names:
+            tsv_paths = save_hu_dataset_locally(config, audio_dir, transcript_dir)
+            # Sentence-based HF datasets: synthesize SRTs locally
+            if tsv_paths:
+                config["tsv_paths"] = tsv_paths
+                config["clips_folders"] = [str(audio_dir)] * len(tsv_paths)
+                config["partials"] = config.get("partials", [1.0] * len(tsv_paths))
+        # TSV-based sentence inputs: generate SRTs from sentences
         generate_fold_from_yaml(config)
 
     # Preprocessing of SRT with Netflix rules
     if config.get("netflix_normalize", False):
         netflix_normalize_all_srts_in_folder(transcript_dir)
 
-    data_processor = DataProcessor(
+    # Cut the srts to the desired length
+    dp = DataProcessor(
         audio_dir=audio_dir,
         transcript_dir=transcript_dir,
         output=output_file,
         dump_dir=dump_dir,
     )
-    data_processor.run()
+    dp.run()
 
     df_dataframe = ljson_to_pandas(json_path=output_file)
     print(f"Loaded {len(df_dataframe)} samples")
