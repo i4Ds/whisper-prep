@@ -11,9 +11,6 @@ from whisper.audio import load_audio
 from whisper.tokenizer import LANGUAGES, TO_LANGUAGE_CODE, get_tokenizer
 from whisper.utils import format_timestamp
 from whisper_prep.generation.typing import PromptNode, Record, Utterance
-from whisper_prep.generation.text_normalizer import (
-    remove_keywords_with_brackets,
-)
 import csv
 
 DURATION = 30000  # 30 seconds in milliseconds
@@ -257,9 +254,7 @@ class DataProcessor:
                         self.write_records(records, self.output)
                     except Exception as e:
                         print(e)
-                        print(
-                            f"Skipping {srt_path} due to an error in the transcript"
-                        )
+                        print(f"Skipping {srt_path} due to an error in the transcript")
                     finally:
                         self.language = orig_lang
             return
@@ -336,8 +331,6 @@ class DataProcessor:
                         ]
                     ]
                 ).strip()
-                # Skip cues containing only keywords (e.g., stage directions) by removing them
-                text = remove_keywords_with_brackets(text)
                 if normalize_unicode:
                     text = unicodedata.normalize("NFKC", text)
                 # Filter out empty utterances
@@ -378,8 +371,6 @@ class DataProcessor:
                         ]
                     ]
                 ).strip()
-                # Skip cues containing only keywords (e.g., stage directions) by removing them
-                text = remove_keywords_with_brackets(text)
                 if normalize_unicode:
                     text = unicodedata.normalize("NFKC", text)
                 # Filter out empty utterances

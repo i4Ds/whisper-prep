@@ -14,35 +14,6 @@ APOS_TABLE = str.maketrans(
 )
 
 
-def remove_keywords_with_brackets(
-    text,
-    keywords=[
-        "Live-Untertitel",
-        "Wir untertiteln live",
-        "Livepassagen",
-        "1:1 Untertitelungen",
-        "1:1-Untertitelung",
-        "TELETEXT",
-        "SWISS TXT",
-        "Amara",
-        "Untertitel",
-        "ZDF",
-        "Amara.org",
-        "Copyright WDR 2021",
-        "NDR live untertitelt",
-    ],
-):
-    if any(keyword in text for keyword in keywords):
-        # Create a single pattern that matches any of the keywords
-        pattern = re.compile(
-            r"<\|.*?\|>.*?(" + "|".join(map(re.escape, keywords)) + r").*?<\|.*?\|>"
-        )
-        # Replace all matches with an empty string
-        return pattern.sub("", text)
-    else:
-        return text
-
-
 def normalize_abbrv(text):
     abbreviation_map = {
         "Std.": "Stunden",
@@ -386,5 +357,6 @@ def normalize_text(text):
     text = standardize_text(text)
     converter = SwissNumberConverter()
     text = converter.convert_numbers(text)
+    text = text.replace("\n", " ")  # replace newlines with space
     text = re.sub(r"\s{2,}", " ", text).strip()
     return text

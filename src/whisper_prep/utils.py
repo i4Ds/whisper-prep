@@ -124,7 +124,7 @@ def fuse_until_limits(
     return changed
 
 
-def normalize_file(path: str) -> None:
+def netflix_normalize_file(path: str) -> None:
     subs = pysubs2.load(path)
     if fuse_until_limits(subs):
         subs.save(path, format_="srt")  # overwrite in place
@@ -134,7 +134,8 @@ def normalize_file(path: str) -> None:
 def netflix_normalize_all_srts_in_folder(folder: str = ".") -> None:
     """One-liner helper: normalize all .srt files in *folder*."""
     for file in glob(os.path.join(folder, "*.srt")):
-        normalize_file(file)
+        netflix_normalize_file(file)
+
 
 def save_hu_dataset_locally(config, audio_dir, transcript_dir):
     """Save HuggingFace dataset examples locally as audio and SRT or collect sentences.
@@ -143,13 +144,10 @@ def save_hu_dataset_locally(config, audio_dir, transcript_dir):
     split_name = config["split_name"]
     out_folder = config["out_folder"]
 
-    hu_names = config['hu_datasets']
-
+    hu_names = config["hu_datasets"]
 
     datasets_list = [load_dataset(name, split=split_name) for name in hu_names]
-    overlapping_cols = set.intersection(
-        *[set(ds.column_names) for ds in datasets_list]
-    )
+    overlapping_cols = set.intersection(*[set(ds.column_names) for ds in datasets_list])
     datasets_list = [
         ds.select_columns(sorted(overlapping_cols)) for ds in datasets_list
     ]
@@ -159,7 +157,11 @@ def save_hu_dataset_locally(config, audio_dir, transcript_dir):
         enumerate(ds), total=len(ds), desc=f"Saving examples to {audio_dir}"
     ):
         audio_field = example.get("audio")
-        if isinstance(audio_field, dict) and "array" in audio_field and "sampling_rate" in audio_field:
+        if (
+            isinstance(audio_field, dict)
+            and "array" in audio_field
+            and "sampling_rate" in audio_field
+        ):
             import soundfile as sf
 
             audio_id = example.get("id", idx)
@@ -196,6 +198,7 @@ def save_hu_dataset_locally(config, audio_dir, transcript_dir):
             writer.writerows(sentence_entries)
         tsv_paths.append(str(tsv_file))
     return tsv_paths
+
 
 if __name__ == "__main__":
 

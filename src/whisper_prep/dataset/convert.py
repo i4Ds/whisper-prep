@@ -18,7 +18,7 @@ def ljson_to_dataframe(json_path: Union[str, Path]) -> pd.DataFrame:
     return pd.DataFrame(data)
 
 
-def ljson_to_pandas(json_path: Union[str, Path]) -> Dataset:
+def ljson_to_pandas(json_path: Union[str, Path]) -> pd.DataFrame:
     train_meta_file = ljson_to_dataframe(json_path)
     train_meta_file.rename(columns={"audio_path": "audio"}, inplace=True)
 

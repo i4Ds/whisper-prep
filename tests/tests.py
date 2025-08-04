@@ -6,7 +6,6 @@ standardize_text, normalize_abbrv, and normalize_text wrapper.
 import unittest
 
 from whisper_prep.generation.text_normalizer import (
-    remove_keywords_with_brackets,
     normalize_abbrv,
     standardize_text,
     normalize_capitalization,
@@ -21,14 +20,6 @@ from whisper_prep.generation.text_normalizer import (
 
 
 class TestGenerate(unittest.TestCase):
-    # remove_keywords_with_brackets removes bracketed segments containing keywords
-    def test_remove_keywords_with_brackets(self):
-        text = "<|tag|> Live-Untertitel content <|end|>"
-        assert remove_keywords_with_brackets(text) == ""
-        # no keywords present returns original text
-        original = "<|tag|> no keyword here <|end|>"
-        assert remove_keywords_with_brackets(original) == original
-
     # normalize_abbrv expands common German abbreviations to full form
     def test_normalize_abbrv(self):
         assert normalize_abbrv(" z.B. ") == " zum Beispiel "

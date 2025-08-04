@@ -9,17 +9,15 @@ from whisper_prep.utils import (
     get_compression_ratio,
     is_french,
     netflix_normalize_all_srts_in_folder,
-    save_hu_dataset_locally
+    save_hu_dataset_locally,
+    netflix_normalize_file,
 )
+from whisper_prep.dataset.convert import ljson_to_pandas, pandas_to_hf_dataset
+import csv
+from tqdm import tqdm
 
 
 def main(config=None):
-    # Heavy imports deferred to runtime
-    import shutil
-    from datasets import load_dataset, concatenate_datasets
-    from tqdm.auto import tqdm
-    from whisper_prep.dataset.convert import ljson_to_pandas, pandas_to_hf_dataset
-
     if config is None:
         args = parse_args()
         with open(args.config, "r") as config_file:
@@ -66,7 +64,13 @@ def main(config=None):
 
     # Step 3: Netflix-style SRT normalization (optional)
     if config.get("netflix_normalize", False):
-        netflix_normalize_all_srts_in_folder(transcript_dir)
+        if transcripts_tsv:
+            with open(transcripts_tsv, encoding="utf-8") as tsvfile:
+                reader = csv.DictReader(tsvfile, delimiter="\t")
+                for row in reader:
+                    netflix_normalize_file(row["srt_path"])
+        else:
+            netflix_normalize_all_srts_in_folder(transcript_dir)
 
     # Step 4: segment & timestamp via DataProcessor
     dp = DataProcessor(
@@ -98,6 +102,17 @@ def main(config=None):
                 Path(out_folder, "french_examples.csv"), sep="\t"
             )
             df_dataframe = df_dataframe[~french_idx]
+
+    # Filter out chunks with certain words if specified
+    if "filter_words" in config:
+        for word in config["filter_words"]:
+            word_idx = df_dataframe["text"].str.contains(word, case=False)
+            if word_idx.any():
+                print(f"Filtering out {word} from dataset")
+                df_dataframe[word_idx].to_csv(
+                    Path(out_folder, f"filtered_{word}_examples.csv"), sep="\t"
+                )
+                df_dataframe = df_dataframe[~word_idx]
 
     # Convert to HuggingFace dataset and save
     hf_dataset = pandas_to_hf_dataset(
