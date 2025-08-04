@@ -40,6 +40,7 @@ class DataProcessor:
         tokenizer_type: str = "multilingual",
         normalize_unicode: bool = False,
         cut_initial_audio: bool = False,
+        filter_segment_words: Optional[List[str]] = None,
         transcripts_tsv: Optional[str] = None,
     ) -> None:
         self.with_timestamps = with_timestamps
@@ -58,6 +59,7 @@ class DataProcessor:
         self.tokenizer_type = tokenizer_type
         self.normalize_unicode = normalize_unicode
         self.cut_initial_audio = cut_initial_audio
+        self.filter_segment_words = filter_segment_words
         self.transcripts_tsv = transcripts_tsv
 
         self._verify_args()
@@ -236,11 +238,15 @@ class DataProcessor:
                     try:
                         if srt_path.suffix == ".srt":
                             utterances = self.read_utterances_from_srt(
-                                srt_path, self.normalize_unicode
+                                srt_path,
+                                self.normalize_unicode,
+                                self.filter_segment_words,
                             )
                         elif srt_path.suffix == ".vtt":
                             utterances = self.read_utterances_from_vtt(
-                                srt_path, self.normalize_unicode
+                                srt_path,
+                                self.normalize_unicode,
+                                self.filter_segment_words,
                             )
                         else:
                             raise ValueError(
@@ -302,7 +308,9 @@ class DataProcessor:
 
     @staticmethod
     def read_utterances_from_srt(
-        transcript_path: Union[str, Path], normalize_unicode: bool = False
+        transcript_path: Union[str, Path],
+        normalize_unicode: bool = False,
+        filter_segment_words: Optional[List[str]] = None,
     ) -> List[Utterance]:
         utterances = []
         with open(transcript_path, encoding="utf-8") as f:
@@ -333,9 +341,17 @@ class DataProcessor:
                 ).strip()
                 if normalize_unicode:
                     text = unicodedata.normalize("NFKC", text)
-                # Filter out empty utterances
                 if not text:
                     continue
+                # Skip if single dot
+                if text == ".":
+                    continue
+                # Filter out utterances containing specific words, if specified
+                if filter_segment_words:
+                    if any(
+                        word.lower() in text.lower() for word in filter_segment_words
+                    ):
+                        continue
 
                 utterances.append(Utterance(text=text, start=start_time, end=end_time))
 
@@ -343,7 +359,9 @@ class DataProcessor:
 
     @staticmethod
     def read_utterances_from_vtt(
-        transcript_path: Union[str, Path], normalize_unicode: bool = False
+        transcript_path: Union[str, Path],
+        normalize_unicode: bool = False,
+        filter_segment_words: Optional[List[str]] = None,
     ) -> List[Utterance]:
         utterances = []
         with open(transcript_path, encoding="utf-8") as f:
@@ -376,6 +394,15 @@ class DataProcessor:
                 # Filter out empty utterances
                 if not text:
                     continue
+                # Skip if single dot
+                if text == ".":
+                    continue
+                # Filter out utterances containing specific words, if specified
+                if filter_segment_words:
+                    if any(
+                        word.lower() in text.lower() for word in filter_segment_words
+                    ):
+                        continue
 
                 utterances.append(Utterance(text=text, start=start_time, end=end_time))
 
@@ -516,7 +543,7 @@ class DataProcessor:
             if utterances[i].end > utterances[i + 1].start:
                 return False
 
-            # Check for repeated words three or more times consecutively
+        # Check for repeated words three or more times consecutively
         last_text = utterances[0].text
         repeat_count = 1
         for i in range(1, len(utterances)):
