@@ -283,7 +283,9 @@ def generate_fold(
             print(f"Remaining samples: {remaining_samples}")
 
         # If there are too many SRTs, the list is getting to big and append to list will come to a halt.
-        if len(constructed_samples) > 1500:
+        if (
+            len(constructed_samples) * n_samples_per_srt > 50000
+        ):  # Lists starts to get extremely slow if it has more than 50k items.
             generate_ = partial(
                 _generate_wrapper,
                 audios_folder=audios_folder,
