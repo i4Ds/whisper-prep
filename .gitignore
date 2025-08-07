@@ -163,3 +163,4 @@ notebooks/
 
 tests/assets/out/
 out/*
+*.yaml
