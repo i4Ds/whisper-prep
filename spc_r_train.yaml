@@ -1,3 +1,4 @@
+# Example configuration for using our pipeline with SRT files and HuggingFace datasets
 # Output structure: out_folder_base/dataset_name/split_name
 dataset_name: spc_r_whisper # Name of the dataset (e.g. STT or SDS). This will be the main output folder.
 split_name: train # Name of the data split (e.g. Train, Test, Validation).
