@@ -347,11 +347,14 @@ class DataProcessor:
                 if text == ".":
                     continue
                 # Filter out utterances containing specific words, if specified
-                if filter_segment_words:
-                    if any(
-                        word.lower() in text.lower() for word in filter_segment_words
-                    ):
-                        continue
+                contains_filter_words = False
+                if filter_segment_words is not None:
+                    for word in filter_segment_words:
+                        if word.lower() in text.lower():
+                            contains_filter_words = True
+
+                if contains_filter_words:
+                    continue
 
                 utterances.append(Utterance(text=text, start=start_time, end=end_time))
 
