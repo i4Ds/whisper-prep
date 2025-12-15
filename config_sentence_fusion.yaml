@@ -1,0 +1,94 @@
+# Example: Fusing Sentences into Long-Form Audio
+# This configuration takes short sentence-level audio clips and combines them into
+# longer, more realistic training data with matching SRT subtitles.
+#
+# Use case: Common Voice, Mozilla STT, or other sentence-level datasets
+
+# Output structure: out_folder_base/dataset_name/split_name
+dataset_name: common_voice_fused
+split_name: train
+out_folder_base: ./datasets
+
+# ============================================================================
+# DATA SOURCE: Sentence-Level TSV
+# ============================================================================
+# Required TSV columns:
+#   - path: relative path to audio file (e.g., "clips/abc123.mp3")
+#   - sentence: transcribed text (e.g., "The quick brown fox")
+#   - client_id: (optional) speaker ID for maintaining speaker consistency
+#
+tsv_paths: 
+  - "./data/sentences_train.tsv"
+clips_folders: 
+  - "./data/audio_clips"
+partials: [1.0]  # Use all data (0.5 = 50%, 0.1 = 10%)
+
+# Leave these null when using sentence-level TSV
+hu_datasets: null
+transcripts_tsv: null
+
+# ============================================================================
+# SENTENCE FUSION CONFIGURATION
+# ============================================================================
+# Controls how sentences are combined into long-form audio segments
+
+# Probability (0-1) of keeping the same speaker for consecutive utterances
+# 0.0 = always random speaker, 1.0 = always same speaker
+maintain_speaker_chance: 0.6
+
+# Number of sentences to combine into each SRT file
+# Typical durations:
+#   - 8 samples: ~30 seconds
+#   - 16 samples: ~60 seconds
+#   - 32 samples: ~2 minutes
+n_samples_per_srt: 16
+
+# Apply text normalization (removes URLs, extra spaces, etc.)
+normalize_text: true
+
+# ============================================================================
+# AUDIO OVERLAP CONFIGURATION
+# ============================================================================
+# Creates realistic speech patterns by allowing clips to overlap slightly
+# in non-speech regions. Based on: https://arxiv.org/html/2412.15726v1
+
+# Probability (0-1) of creating an overlap between consecutive audio clips
+# Overlap only occurs in non-speech segments detected by Voice Activity Detection (VAD)
+overlap_chance: 0.4
+
+# Probability (0-1) of maximum overlap when an overlap occurs
+# If triggered: non-speech is removed → back-to-back speech
+# If not triggered: random amount of non-speech kept between utterances
+max_overlap_chance: 0.2
+
+# Maximum duration (in seconds) of overlap between utterances
+max_overlap_duration: 0.5
+
+# ============================================================================
+# FILTERING & PROCESSING OPTIONS
+# ============================================================================
+
+# Apply Netflix-style caption normalization
+# Merges consecutive captions to meet: max 42 chars, max 7 seconds
+netflix_normalize: false
+
+# Do not trim initial silence
+cut_initial_audio: false
+
+# Do not filter out French samples
+filter_french: false
+
+# Do not filter samples by specific words
+# filter_words: ["[MUSIC]", "[NOISE]", "[APPLAUSE]"]
+
+# ============================================================================
+# OUTPUT & UPLOAD
+# ============================================================================
+
+# Convert to HuggingFace dataset format
+# Output: ./datasets/common_voice_fused/train/hf/
+
+# Upload to HuggingFace Hub (requires 'huggingface-cli login')
+upload_to_hu: false
+# hu_repo: "username/common_voice_fused"
+# hu_private: true

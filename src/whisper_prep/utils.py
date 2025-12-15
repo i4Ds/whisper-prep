@@ -84,31 +84,47 @@ def fuse_until_limits(
     subs: pysubs2.SSAFile,
     max_chars: int = NETFLIX_CHAR,
     max_duration: float = NETFLIX_DUR,
+    skip_words: list = None,
 ) -> bool:
     """Rewrite *subs* in‑place, merging cues while combined cue stays <= limits.
+    
+    Cues containing any word in skip_words will not be merged with others.
 
     Returns True if *subs* was modified.
     """
     if pysubs2 is None or not subs:
         return False
+    
+    skip_words = skip_words or []
+
+    def contains_skip_word(text: str) -> bool:
+        return any(word.lower() in text.lower() for word in skip_words)
 
     merged = pysubs2.SSAFile()
     current = subs[0].copy()
+    
+    # If first cue contains skip word, don't merge with anything
+    current_has_skip = contains_skip_word(current.text)
 
     for cue in subs[1:]:
+        cue_has_skip = contains_skip_word(cue.text)
         combined_text = f"{current.text.rstrip()} {cue.text.lstrip()}"
         combined_dur = (cue.end - current.start) / 1000  # ms → s
 
         within_limits = len(combined_text) <= max_chars and combined_dur <= max_duration
+        
+        # Don't merge if either cue contains a skip word
+        can_merge = within_limits and not current_has_skip and not cue_has_skip
 
-        if within_limits:
+        if can_merge:
             # Safe to merge: extend current cue
             current.end = cue.end
             current.text = combined_text
         else:
-            # Would exceed limits -> flush current and start anew
+            # Would exceed limits or contains skip word -> flush current and start anew
             merged.append(current)
             current = cue.copy()
+            current_has_skip = cue_has_skip
 
     merged.append(current)
 
@@ -124,17 +140,23 @@ def fuse_until_limits(
     return changed
 
 
-def netflix_normalize_file(path: str) -> None:
+def netflix_normalize_file(path: str, skip_words: list = None) -> None:
+    """Normalize SRT file using Netflix-style limits.
+    
+    Args:
+        path: Path to the SRT file
+        skip_words: List of words - cues containing these will not be merged
+    """
     subs = pysubs2.load(path)
-    if fuse_until_limits(subs):
+    if fuse_until_limits(subs, skip_words=skip_words):
         subs.save(path, format_="srt")  # overwrite in place
         print(f"Updated {(path)}")
 
 
-def netflix_normalize_all_srts_in_folder(folder: str = ".") -> None:
+def netflix_normalize_all_srts_in_folder(folder: str = ".", skip_words: list = None) -> None:
     """One-liner helper: normalize all .srt files in *folder*."""
     for file in glob(os.path.join(folder, "*.srt")):
-        netflix_normalize_file(file)
+        netflix_normalize_file(file, skip_words=skip_words)
 
 
 def save_hu_dataset_locally(config, audio_dir, transcript_dir):

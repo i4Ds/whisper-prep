@@ -62,16 +62,19 @@ def main(config=None):
         elif not hu_names:
             generate_fold_from_yaml(config)
 
+    # Get filter_words for Netflix normalization and DataProcessor
+    filter_words = config.get("filter_words", [])
+    
     # Step 3: Netflix-style SRT normalization (optional)
     if config.get("netflix_normalize", False):
         if transcripts_tsv:
             with open(transcripts_tsv, encoding="utf-8") as tsvfile:
                 reader = csv.DictReader(tsvfile, delimiter="\t")
                 for row in reader:
-                    netflix_normalize_file(row["srt_path"])
+                    netflix_normalize_file(row["srt_path"], skip_words=filter_words)
         else:
-            netflix_normalize_all_srts_in_folder(transcript_dir)
-
+            netflix_normalize_all_srts_in_folder(transcript_dir, skip_words=filter_words)
+    
     # Step 4: segment & timestamp via DataProcessor
     dp = DataProcessor(
         audio_dir=audio_dir,
@@ -79,7 +82,7 @@ def main(config=None):
         output=output_file,
         dump_dir=dump_dir,
         cut_initial_audio=config.get("cut_initial_audio", False),
-        filter_segment_words=config.get("filter_words", []),
+        filter_segment_words=filter_words,
         transcripts_tsv=transcripts_tsv,
     )
     dp.run()

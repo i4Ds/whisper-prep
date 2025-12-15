@@ -1,0 +1,122 @@
+# Example: Splitting Long-Form Audio with Existing SRTs
+# This configuration processes long-form audio files with existing SRT/VTT subtitles,
+# segmenting them into 30-second chunks with timestamp information for Whisper training.
+#
+# Use case: Movie subtitles, podcast transcripts, audiobook recordings
+
+# Output structure: out_folder_base/dataset_name/split_name
+dataset_name: long_form_transcripts
+split_name: train
+out_folder_base: ./datasets
+
+# ============================================================================
+# DATA SOURCE: Existing SRT + Audio Mapping
+# ============================================================================
+# Method 1: Using transcripts_tsv (recommended)
+# Create a TSV with columns: srt_path, audio_path, language, id
+#   Example row:
+#     movie_001.srt  /path/to/movie_001.mp3  de  movie_001
+#     podcast_002.srt  /path/to/podcast_002.mp3  en  podcast_002
+#
+# Do NOT use tsv_paths/clips_folders when using transcripts_tsv
+transcripts_tsv: "./data/transcripts_mapping.tsv"
+
+# Leave these null when using transcripts_tsv
+tsv_paths: null
+clips_folders: null
+partials: null
+hu_datasets: null
+
+# Alternative Method 2: Folder-based (auto-matching)
+# Place audio and SRT files with matching names in separate folders:
+#   ./audio/movie_001.mp3  ↔  ./transcripts/movie_001.srt
+#   ./audio/podcast_002.mp3  ↔  ./transcripts/podcast_002.srt
+# Then leave transcripts_tsv null and uncomment above using tsv_paths approach
+
+# ============================================================================
+# AUDIO SEGMENTATION CONFIGURATION
+# ============================================================================
+# These settings are IGNORED when using transcripts_tsv
+# (segmentation is always 30 seconds for Whisper compatibility)
+
+maintain_speaker_chance: 0.5
+n_samples_per_srt: 16
+normalize_text: false
+overlap_chance: 0.0
+max_overlap_chance: 0.0
+max_overlap_duration: 0.0
+
+# ============================================================================
+# SRT PROCESSING OPTIONS
+# ============================================================================
+
+# Apply Netflix-style caption normalization before segmentation
+# Merges consecutive captions to meet: max 42 characters, max 7 seconds
+# Useful for dense subtitles that need consolidation
+netflix_normalize: true
+
+# Skip words that should NOT be merged when normalizing
+# Cues containing these words will be kept separate
+# (Prevents merging music cues, effects descriptions, etc.)
+# filter_words: ["[MUSIC]", "[SOUND]", "[APPLAUSE]"]
+
+# Trim initial silence from audio (1 second before first subtitle)
+# Useful for movies/podcasts with intro sequences
+cut_initial_audio: true
+
+# ============================================================================
+# QUALITY FILTERING OPTIONS
+# ============================================================================
+
+# Remove French language samples (uses heuristic + model detection)
+filter_french: false
+
+# Remove samples containing specific keywords
+# Useful to exclude:
+#   - Placeholder text: "[UNKNOWN]", "[INAUDIBLE]"
+#   - Sound effects: "[MUSIC]", "[NOISE]", "[LAUGHTER]"
+#   - Metadata: "[SUBTITLE]", "[CAPTION]"
+filter_words: ["[MUSIC]", "[APPLAUSE]", "[SOUND EFFECTS]"]
+
+# ============================================================================
+# OUTPUT & UPLOAD
+# ============================================================================
+
+# Output structure:
+#   ./datasets/long_form_transcripts/train/
+#   ├── created_dataset/
+#   │   ├── data.ljson                 (processed records)
+#   │   └── dump/
+#   │       ├── audio_001/
+#   │       │   ├── 0.mp3              (segment 0-30s)
+#   │       │   ├── 30000.mp3          (segment 30-60s)
+#   │       │   └── ...
+#   │       └── audio_002/
+#   │           ├── 0.mp3
+#   │           └── ...
+#   ├── hf/                            (HuggingFace format)
+#   ├── bad_examples.csv               (filtered problematic samples)
+#   └── filtered_*.csv                 (filtered by keywords)
+
+# Convert to HuggingFace dataset format (automatic)
+
+# Upload to HuggingFace Hub (requires 'huggingface-cli login')
+upload_to_hu: false
+# hu_repo: "username/long_form_transcripts"
+# hu_private: true
+
+# ============================================================================
+# TRANSCRIPTS_TSV FORMAT EXAMPLE
+# ============================================================================
+# Save as TSV with tab-separated values:
+#
+# srt_path                   audio_path                    language  id
+# ./subtitles/movie_001.srt  ./audio/movie_001.mp3        de        movie_001
+# ./subtitles/podcast_002.srt ./audio/podcast_002.mp3     en        podcast_002
+# ./subtitles/audiobook.vtt  ./audio/audiobook.mp3        de        audiobook_001
+#
+# Columns:
+#   - srt_path: Path to SRT or VTT file (relative or absolute)
+#   - audio_path: Path to corresponding audio file (MP3, WAV, etc.)
+#   - language: ISO 639-1 language code (de, en, fr, etc.)
+#   - id: Unique identifier (used for output folder names)
