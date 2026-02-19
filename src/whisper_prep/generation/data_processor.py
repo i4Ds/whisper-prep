@@ -43,6 +43,7 @@ class DataProcessor:
         normalize_unicode: bool = False,
         cut_initial_audio: bool = False,
         filter_segment_words: Optional[List[str]] = None,
+        drop_no_text_segments: bool = True,
         transcripts_tsv: Optional[str] = None,
     ) -> None:
         self.with_timestamps = with_timestamps
@@ -62,6 +63,7 @@ class DataProcessor:
         self.normalize_unicode = normalize_unicode
         self.cut_initial_audio = cut_initial_audio
         self.filter_segment_words = filter_segment_words
+        self.drop_no_text_segments = drop_no_text_segments
         self.transcripts_tsv = transcripts_tsv
         self.filtered_segment_records: List[dict] = []
 
@@ -254,6 +256,7 @@ class DataProcessor:
                                 srt_path,
                                 self.normalize_unicode,
                                 self.filter_segment_words,
+                                self.drop_no_text_segments,
                                 filtered_for_speech,
                                 speech_id,
                             )
@@ -262,6 +265,7 @@ class DataProcessor:
                                 srt_path,
                                 self.normalize_unicode,
                                 self.filter_segment_words,
+                                self.drop_no_text_segments,
                                 filtered_for_speech,
                                 speech_id,
                             )
@@ -335,6 +339,7 @@ class DataProcessor:
         transcript_path: Union[str, Path],
         normalize_unicode: bool = False,
         filter_segment_words: Optional[List[str]] = None,
+        drop_no_text_segments: bool = True,
         filtered_out: Optional[List[dict]] = None,
         source_id: Optional[str] = None,
     ) -> List[Utterance]:
@@ -367,10 +372,22 @@ class DataProcessor:
                 ).strip()
                 if normalize_unicode:
                     text = unicodedata.normalize("NFKC", text)
-                if not text:
+                if not text and drop_no_text_segments:
+                    if filtered_out is not None:
+                        filtered_out.append(
+                            {
+                                "speech_id": source_id
+                                or Path(transcript_path).stem,
+                                "transcript_path": str(transcript_path),
+                                "start_ms": start_time,
+                                "end_ms": end_time,
+                                "text": text,
+                                "matched_word": "no_text_segment",
+                            }
+                        )
                     continue
-                # Skip if single dot
-                if text == ".":
+                # Skip if single character
+                if len(text) == 1:
                     continue
                 # Filter out utterances containing specific words, if specified
                 contains_filter_words = False
@@ -406,6 +423,7 @@ class DataProcessor:
         transcript_path: Union[str, Path],
         normalize_unicode: bool = False,
         filter_segment_words: Optional[List[str]] = None,
+        drop_no_text_segments: bool = True,
         filtered_out: Optional[List[dict]] = None,
         source_id: Optional[str] = None,
     ) -> List[Utterance]:
@@ -438,7 +456,19 @@ class DataProcessor:
                 if normalize_unicode:
                     text = unicodedata.normalize("NFKC", text)
                 # Filter out empty utterances
-                if not text:
+                if not text and drop_no_text_segments:
+                    if filtered_out is not None:
+                        filtered_out.append(
+                            {
+                                "speech_id": source_id
+                                or Path(transcript_path).stem,
+                                "transcript_path": str(transcript_path),
+                                "start_ms": start_time,
+                                "end_ms": end_time,
+                                "text": text,
+                                "matched_word": "no_text_segment",
+                            }
+                        )
                     continue
                 # Skip if single dot
                 if text == ".":

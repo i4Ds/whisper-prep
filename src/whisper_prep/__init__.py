@@ -83,6 +83,7 @@ def main(config=None):
         dump_dir=dump_dir,
         cut_initial_audio=config.get("cut_initial_audio", False),
         filter_segment_words=filter_words,
+        drop_no_text_segments=config.get("drop_no_text_segments", True),
         transcripts_tsv=transcripts_tsv,
     )
     dp.run()
