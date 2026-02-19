@@ -1,5 +1,6 @@
 import json
 import unicodedata
+import warnings
 from collections import deque
 from pathlib import Path
 from typing import Deque, List, Optional, Union
@@ -12,6 +13,7 @@ from whisper.tokenizer import LANGUAGES, TO_LANGUAGE_CODE, get_tokenizer
 from whisper.utils import format_timestamp
 from whisper_prep.generation.typing import PromptNode, Record, Utterance
 import csv
+from collections import defaultdict
 
 DURATION = 30000  # 30 seconds in milliseconds
 SAMPLE_RATE = 16000
@@ -61,6 +63,7 @@ class DataProcessor:
         self.cut_initial_audio = cut_initial_audio
         self.filter_segment_words = filter_segment_words
         self.transcripts_tsv = transcripts_tsv
+        self.filtered_segment_records: List[dict] = []
 
         self._verify_args()
 
@@ -104,6 +107,8 @@ class DataProcessor:
             self._process_with_timestamps()
         else:
             self._process_without_timestamps()
+
+        self._write_filtered_segments()
 
         if self.subsampling_factor_for_silence > 1:
             self._subsample_silence()
@@ -228,34 +233,53 @@ class DataProcessor:
     def _process_with_timestamps(self) -> None:
         if self.transcripts_tsv:
             with open(self.transcripts_tsv, encoding="utf-8") as tsvfile:
+                # Pre-count rows so tqdm can display ETA and progress percentage.
+                total_rows = max(0, sum(1 for _ in tsvfile) - 1)
+                tsvfile.seek(0)
                 reader = csv.DictReader(tsvfile, delimiter="\t")
-                for row in tqdm(reader, desc="Processing TSV transcripts"):
+                for row in tqdm(
+                    reader,
+                    total=total_rows,
+                    desc="Processing TSV transcripts",
+                ):
                     srt_path = Path(row["srt_path"])
                     audio_path = Path(row["audio_path"])
                     speech_id = row.get("id") or audio_path.stem
                     orig_lang = self.language
                     self.language = row.get("language") or self.language
+                    filtered_for_speech: List[dict] = []
                     try:
                         if srt_path.suffix == ".srt":
                             utterances = self.read_utterances_from_srt(
                                 srt_path,
                                 self.normalize_unicode,
                                 self.filter_segment_words,
+                                filtered_for_speech,
+                                speech_id,
                             )
                         elif srt_path.suffix == ".vtt":
                             utterances = self.read_utterances_from_vtt(
                                 srt_path,
                                 self.normalize_unicode,
                                 self.filter_segment_words,
+                                filtered_for_speech,
+                                speech_id,
                             )
                         else:
                             raise ValueError(
                                 f"Unsupported transcript format: {srt_path.suffix}"
                             )
+                        self.filtered_segment_records.extend(filtered_for_speech)
                         if not self._is_valid_utterances(utterances, 0):
                             utterances = self._sanitize_utterances(utterances)
+                        blocked_intervals = [
+                            (r["start_ms"], r["end_ms"]) for r in filtered_for_speech
+                        ]
                         records = self._create_records_with_timestamps(
-                            utterances, audio_path, speech_id
+                            utterances,
+                            audio_path,
+                            speech_id,
+                            blocked_intervals=blocked_intervals,
                         )
                         self.write_records(records, self.output)
                     except Exception as e:
@@ -311,6 +335,8 @@ class DataProcessor:
         transcript_path: Union[str, Path],
         normalize_unicode: bool = False,
         filter_segment_words: Optional[List[str]] = None,
+        filtered_out: Optional[List[dict]] = None,
+        source_id: Optional[str] = None,
     ) -> List[Utterance]:
         utterances = []
         with open(transcript_path, encoding="utf-8") as f:
@@ -348,12 +374,27 @@ class DataProcessor:
                     continue
                 # Filter out utterances containing specific words, if specified
                 contains_filter_words = False
+                matched_word = None
                 if filter_segment_words is not None:
                     for word in filter_segment_words:
                         if word.lower() in text.lower():
                             contains_filter_words = True
+                            matched_word = word
+                            break
 
                 if contains_filter_words:
+                    if filtered_out is not None:
+                        filtered_out.append(
+                            {
+                                "speech_id": source_id
+                                or Path(transcript_path).stem,
+                                "transcript_path": str(transcript_path),
+                                "start_ms": start_time,
+                                "end_ms": end_time,
+                                "text": text,
+                                "matched_word": matched_word or "",
+                            }
+                        )
                     continue
 
                 utterances.append(Utterance(text=text, start=start_time, end=end_time))
@@ -365,6 +406,8 @@ class DataProcessor:
         transcript_path: Union[str, Path],
         normalize_unicode: bool = False,
         filter_segment_words: Optional[List[str]] = None,
+        filtered_out: Optional[List[dict]] = None,
+        source_id: Optional[str] = None,
     ) -> List[Utterance]:
         utterances = []
         with open(transcript_path, encoding="utf-8") as f:
@@ -402,131 +445,253 @@ class DataProcessor:
                     continue
                 # Filter out utterances containing specific words, if specified
                 if filter_segment_words:
-                    if any(
-                        word.lower() in text.lower() for word in filter_segment_words
-                    ):
+                    matched_word = None
+                    for word in filter_segment_words:
+                        if word.lower() in text.lower():
+                            matched_word = word
+                            break
+                    if matched_word is not None:
+                        if filtered_out is not None:
+                            filtered_out.append(
+                                {
+                                    "speech_id": source_id
+                                    or Path(transcript_path).stem,
+                                    "transcript_path": str(transcript_path),
+                                    "start_ms": start_time,
+                                    "end_ms": end_time,
+                                    "text": text,
+                                    "matched_word": matched_word,
+                                }
+                            )
                         continue
 
                 utterances.append(Utterance(text=text, start=start_time, end=end_time))
 
         return utterances
 
+    def _write_filtered_segments(self) -> None:
+        if not self.filtered_segment_records:
+            return
+
+        out_folder = Path(self.output).parent
+        if out_folder.name == "created_dataset":
+            out_folder = out_folder.parent
+
+        grouped = defaultdict(list)
+        for record in self.filtered_segment_records:
+            grouped[record.get("matched_word", "")].append(record)
+
+        for word, records in grouped.items():
+            if not records:
+                continue
+            out_path = out_folder / f"filtered_{word}_examples.csv"
+            with open(out_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(
+                    f,
+                    fieldnames=[
+                        "speech_id",
+                        "transcript_path",
+                        "start_ms",
+                        "end_ms",
+                        "text",
+                        "matched_word",
+                    ],
+                    delimiter="\t",
+                )
+                writer.writeheader()
+                writer.writerows(records)
+
     def _create_records_with_timestamps(
         self,
         utterances: List[Utterance],
         audio_path: Path,
         speech_id: Optional[str] = None,
+        blocked_intervals: Optional[List[tuple]] = None,
     ) -> List[Record]:
         audio = torch.tensor(load_audio(audio_path))
         dump_dir = Path(self.dump_dir) / (speech_id if speech_id else audio_path.stem)
         dump_dir.mkdir(parents=True, exist_ok=True)
+        audio_duration_ms = int(audio.size(0) * 1000 / SAMPLE_RATE)
+        safe_spans = self._get_safe_spans(audio_duration_ms, blocked_intervals or [])
         records = []
-        prompt_buffer: Deque[PromptNode] = deque()
-        # Optionally trim initial audio to one second before the first subtitle time
-        if self.cut_initial_audio and utterances:
-            initial_start = max(0, utterances[0].start - 1000)
-        else:
-            initial_start = 0
-        segment_start = initial_start
-        segment_end = segment_start + DURATION  # in milliseconds
+        utterances = sorted(utterances, key=lambda u: u.start)
+        span_cursor = 0
+        for i, (span_start, span_end) in enumerate(safe_spans):
+            if span_start >= span_end:
+                continue
+            # Restart aggregation across filtered-word gaps.
+            prompt_buffer: Deque[PromptNode] = deque()
 
-        idx = 0
-        while idx < len(utterances):
-            # If the utterance is included in the segment and longer than the segment, skip it.
-            if (
-                utterances[idx].start < segment_end
-                and utterances[idx].start + DURATION < utterances[idx].end
-            ):
-                segment_start = utterances[idx].end
-                segment_end = segment_start + DURATION
-                idx += 1
+            span_utterances = []
+            while span_cursor < len(utterances):
+                utterance = utterances[span_cursor]
+                if utterance.end is None or utterance.start is None:
+                    span_cursor += 1
+                    continue
+                if utterance.end <= span_start:
+                    span_cursor += 1
+                    continue
+                if utterance.start >= span_end:
+                    break
+                # Defensive: if a subtitle intersects a blocked interval boundary, drop it.
+                if utterance.start < span_start or utterance.end > span_end:
+                    span_cursor += 1
+                    continue
+                span_utterances.append(utterance)
+                span_cursor += 1
+
+            if not span_utterances:
                 continue
 
-            segment_audio_path = self._save_segment_audio(
-                audio, segment_start, dump_dir
-            )
-            prompt = self._get_prompt(prompt_buffer)
-
-            segment_utterances = []
-            while idx < len(utterances) and utterances[idx].start < segment_end:
-                segment_utterances.append(utterances[idx])
-                idx += 1
-
-            if not self._is_valid_utterances(segment_utterances, segment_start):
-                tqdm.write(
-                    f"Skipping {audio_path} ({format_timestamp(segment_start / 1000)}-"
-                    f"{format_timestamp(segment_end / 1000)}) because it contains invalid "
-                    f"utterances: {segment_utterances}"
-                )
-                prompt_buffer.clear()
-                segment_start = max(segment_end, segment_utterances[-1].end)
-                segment_end = segment_start + DURATION
-                continue
-
-            tokens_length = 0
-            segment_text = []
-            for utterance in segment_utterances:
-                start_token = self._get_time_token(
-                    utterance.start, segment_start, audio_path
-                )
-                if utterance.end <= segment_end:
-                    end_token = self._get_time_token(
-                        utterance.end, segment_start, audio_path
-                    )
-                    utterance_text = self._add_leading_space(utterance.text)
-                    segment_text.extend([start_token, utterance_text, end_token])
-                    new_prompt_length = len(self.tokenizer.encode(utterance_text)) + 2
-                    new_prompt_node = PromptNode(
-                        start_token + utterance_text + end_token, new_prompt_length
-                    )
-                    tokens_length += new_prompt_length
-                else:
-                    segment_text.append(start_token)
-                    new_prompt_node = PromptNode(start_token, 1)
-                    tokens_length += 1
-
-                prompt_buffer.append(new_prompt_node)
-
-            if tokens_length > self.max_tokens_length:
-                tqdm.write(
-                    f"Skipping {audio_path} ({format_timestamp(segment_start / 1000)}-"
-                    f"{format_timestamp(segment_end / 1000)}) because it is too long "
-                    f"({tokens_length} tokens)"
-                )
+            # Optionally trim initial audio only for the first safe span.
+            if i == 0 and self.cut_initial_audio:
+                segment_start = max(span_start, span_utterances[0].start - 1000)
             else:
-                record = Record(
-                    audio_path=segment_audio_path,
-                    language=self.language,
-                    text="".join(segment_text),
-                    prompt=prompt,
-                )
-                records.append(record)
+                segment_start = span_start
 
-            if len(segment_utterances) == 0:
-                segment_start += DURATION
-            elif segment_utterances[-1].end <= segment_end:
-                segment_start = segment_utterances[-1].end
-            else:  # segment_utterances[-1].end > segment_end
-                # The text of the last utterance was not included in the segment and will be
-                # included in the next segment
-                segment_start = segment_utterances[-1].start
-                idx -= 1
-            segment_end = segment_start + DURATION
+            idx = 0
+            while idx < len(span_utterances):
+                segment_end = min(segment_start + DURATION, span_end)
+                if segment_start >= segment_end:
+                    break
+
+                # If the utterance is included in the segment and longer than the segment, skip it.
+                if (
+                    span_utterances[idx].start < segment_end
+                    and span_utterances[idx].start + DURATION < span_utterances[idx].end
+                ):
+                    segment_start = span_utterances[idx].end
+                    idx += 1
+                    continue
+
+                segment_audio_path = self._save_segment_audio(
+                    audio, segment_start, segment_end, dump_dir
+                )
+                prompt = self._get_prompt(prompt_buffer)
+
+                segment_utterances = []
+                while idx < len(span_utterances) and span_utterances[idx].start < segment_end:
+                    segment_utterances.append(span_utterances[idx])
+                    idx += 1
+
+                if not self._is_valid_utterances(segment_utterances, segment_start):
+                    tqdm.write(
+                        f"Skipping {audio_path} ({format_timestamp(segment_start / 1000)}-"
+                        f"{format_timestamp(segment_end / 1000)}) because it contains invalid "
+                        f"utterances: {segment_utterances}"
+                    )
+                    prompt_buffer.clear()
+                    segment_start = max(segment_end, segment_utterances[-1].end)
+                    continue
+
+                tokens_length = 0
+                segment_text = []
+                for utterance in segment_utterances:
+                    start_token = self._get_time_token(
+                        utterance.start, segment_start, audio_path
+                    )
+                    if utterance.end <= segment_end:
+                        end_token = self._get_time_token(
+                            utterance.end, segment_start, audio_path
+                        )
+                        utterance_text = self._add_leading_space(utterance.text)
+                        segment_text.extend([start_token, utterance_text, end_token])
+                        new_prompt_length = len(self.tokenizer.encode(utterance_text)) + 2
+                        new_prompt_node = PromptNode(
+                            start_token + utterance_text + end_token, new_prompt_length
+                        )
+                        tokens_length += new_prompt_length
+                    else:
+                        segment_text.append(start_token)
+                        new_prompt_node = PromptNode(start_token, 1)
+                        tokens_length += 1
+
+                    prompt_buffer.append(new_prompt_node)
+
+                if tokens_length > self.max_tokens_length:
+                    tqdm.write(
+                        f"Skipping {audio_path} ({format_timestamp(segment_start / 1000)}-"
+                        f"{format_timestamp(segment_end / 1000)}) because it is too long "
+                        f"({tokens_length} tokens)"
+                    )
+                else:
+                    record = Record(
+                        audio_path=segment_audio_path,
+                        language=self.language,
+                        text="".join(segment_text),
+                        prompt=prompt,
+                    )
+                    records.append(record)
+
+                if len(segment_utterances) == 0:
+                    segment_start += DURATION
+                elif segment_utterances[-1].end <= segment_end:
+                    segment_start = segment_utterances[-1].end
+                else:  # segment_utterances[-1].end > segment_end
+                    # The text of the last utterance was not included in the segment and will be
+                    # included in the next segment
+                    segment_start = segment_utterances[-1].start
+                    idx -= 1
 
         return records
 
     def _save_segment_audio(
-        self, audio: torch.Tensor, segment_start: int, dump_dir: Path
+        self, audio: torch.Tensor, segment_start: int, segment_end: int, dump_dir: Path
     ) -> str:
         audio_start_idx = int(segment_start * SAMPLE_RATE / 1000)
+        audio_end_idx = int(segment_end * SAMPLE_RATE / 1000)
         segment_audio_path = str((dump_dir / f"{segment_start}.mp3").absolute())
         segment_audio = audio[
-            audio_start_idx : min(audio_start_idx + DURATION_IN_SAMPLES, audio.size(0))
+            audio_start_idx : min(audio_end_idx, audio_start_idx + DURATION_IN_SAMPLES, audio.size(0))
         ]
-        torchaudio.save(
-            segment_audio_path, segment_audio.unsqueeze(0), SAMPLE_RATE, encoding="mp3"
-        )
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="The 'encoding' parameter is not fully supported by TorchCodec AudioEncoder.",
+                category=UserWarning,
+            )
+            torchaudio.save(
+                segment_audio_path,
+                segment_audio.unsqueeze(0),
+                SAMPLE_RATE,
+                encoding="mp3",
+            )
         return segment_audio_path
+
+    @staticmethod
+    def _merge_intervals(intervals: List[tuple]) -> List[tuple]:
+        if not intervals:
+            return []
+        merged = []
+        for start, end in sorted(intervals):
+            if start is None or end is None:
+                continue
+            if end <= start:
+                continue
+            if not merged or start > merged[-1][1]:
+                merged.append([start, end])
+            else:
+                merged[-1][1] = max(merged[-1][1], end)
+        return [(start, end) for start, end in merged]
+
+    def _get_safe_spans(
+        self, audio_duration_ms: int, blocked_intervals: List[tuple]
+    ) -> List[tuple]:
+        blocked = self._merge_intervals(blocked_intervals)
+        if not blocked:
+            return [(0, audio_duration_ms)]
+
+        safe_spans = []
+        cursor = 0
+        for start, end in blocked:
+            start = max(0, min(start, audio_duration_ms))
+            end = max(0, min(end, audio_duration_ms))
+            if cursor < start:
+                safe_spans.append((cursor, start))
+            cursor = max(cursor, end)
+        if cursor < audio_duration_ms:
+            safe_spans.append((cursor, audio_duration_ms))
+        return safe_spans
 
     def _is_valid_utterances(
         self, utterances: List[Utterance], segment_start: int

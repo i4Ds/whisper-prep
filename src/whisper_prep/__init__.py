@@ -111,13 +111,30 @@ def main(config=None):
     # Filter out chunks with certain words if specified
     if "filter_words" in config:
         for word in config["filter_words"]:
-            word_idx = df_dataframe["text"].str.contains(word, case=False)
+            word_idx = df_dataframe["text"].str.contains(
+                word, case=False, regex=False, na=False
+            )
             if word_idx.any():
                 print(f"Filtering out {word} from dataset")
                 df_dataframe[word_idx].to_csv(
                     Path(out_folder, f"filtered_{word}_examples.csv"), sep="\t"
                 )
                 df_dataframe = df_dataframe[~word_idx]
+
+    # Hard safety check: no filtered words should remain in final data.
+    if "filter_words" in config:
+        residual_idx = None
+        for word in config["filter_words"]:
+            word_idx = df_dataframe["text"].str.contains(
+                word, case=False, regex=False, na=False
+            )
+            residual_idx = word_idx if residual_idx is None else (residual_idx | word_idx)
+        if residual_idx is not None and residual_idx.any():
+            residual_path = Path(out_folder, "residual_filtered_words_examples.csv")
+            df_dataframe[residual_idx].to_csv(residual_path, sep="\t")
+            raise ValueError(
+                f"Filtered words still present in final dataset. See: {residual_path}"
+            )
 
     # Convert to HuggingFace dataset and save
     hf_dataset = pandas_to_hf_dataset(
