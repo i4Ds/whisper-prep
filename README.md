@@ -167,6 +167,7 @@ max_overlap_duration: 0.2      # Max overlap duration in seconds
 netflix_normalize: true        # Apply Netflix-style caption merging
 cut_initial_audio: true        # Trim audio to 1 second before first subtitle
 filter_french: true            # Remove French language samples
+filter_english: false          # Remove English language samples
 filter_words: ["[MUSIC]", "[NOISE]"]  # Remove samples containing these words
 ```
 

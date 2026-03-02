@@ -77,6 +77,8 @@ cut_initial_audio: false
 
 # Do not filter out French samples
 filter_french: false
+# Do not filter out English samples
+filter_english: false
 
 # Do not filter samples by specific words
 # filter_words: ["[MUSIC]", "[NOISE]", "[APPLAUSE]"]

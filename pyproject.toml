@@ -121,7 +121,6 @@ classifiers = [
 # https://packaging.python.org/discussions/install-requires-vs-requirements/
 dependencies = [
   "pydub",
-  "webrtcvad",
   "datasets",
   "soundfile",
   "openai-whisper",
@@ -131,6 +130,7 @@ dependencies = [
   "fastlid",
   "fasttext",
   "pysubs2",
+  "torchcodec",
 ]
 
 # List additional groups of dependencies here (e.g. development

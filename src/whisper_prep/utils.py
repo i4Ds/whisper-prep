@@ -1,16 +1,14 @@
 import argparse
-from pathlib import Path
-import zlib
-import re
-from fastlid import fastlid
-import pysubs2
-from glob import glob
 import os
-from datasets import load_dataset, concatenate_datasets
+import re
+import zlib
+from glob import glob
+from pathlib import Path
+
+import pysubs2
+from datasets import concatenate_datasets, load_dataset
+from fastlid import fastlid
 from tqdm.auto import tqdm
-from datasets import load_dataset, concatenate_datasets
-from tqdm.auto import tqdm
-from whisper_prep.dataset.convert import ljson_to_pandas, pandas_to_hf_dataset
 
 NETFLIX_CHAR = 42
 NETFLIX_DUR = 7
@@ -43,6 +41,7 @@ def get_compression_ratio(text: str):
 # 1. compile once – these are the micro-second French heuristics
 # ---------------------------------------------------------------------------
 TAG_RE = re.compile(r"<\|[^|]+\|>")  # strip <|0.16|> etc.
+SAFE_ID_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 FR_WORDS = (
     r"\b(?:que|qui|dans|avec|pour|chez|entre|sans|leur(?:s)?|une?|des?|du|la|le|les"
@@ -53,10 +52,18 @@ FR_APOS = r"\b(?:[ldcjtmnsq]\s*'|qu\s*')"  # l' d' qu' …
 
 HEURISTIC_RE = re.compile(f"(?:{FR_WORDS}|{FR_APOS})", re.I)
 
+# English lexical heuristics
+EN_WORDS = (
+    r"\b(?:the|and|that|with|this|from|for|you|your|are|was|were|have|has"
+    r"|not|but|they|their|what|when|where|would|could|should)\b"
+)
+EN_APOS = r"\b(?:i|you|we|they|it|he|she)\s*'"  # i'm / you're / it's ...
+EN_HEURISTIC_RE = re.compile(f"(?:{EN_WORDS}|{EN_APOS})", re.I)
+
 # ---------------------------------------------------------------------------
-# 2. fastlid setup – keep only fr & de to speed things up
+# 2. fastlid setup – restrict search space to languages relevant for filtering
 # ---------------------------------------------------------------------------
-fastlid.set_languages = ["fr", "de"]  # restrict search space
+fastlid.set_languages = ["fr", "de", "en"]
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +85,29 @@ def is_french(line: str, prob_th: float = 0.85) -> bool:
         return lang == "fr"  # and prob >= prob_th
 
     return False
+
+
+def is_english(line: str, prob_th: float = 0.85) -> bool:
+    """
+    If regexes matches, double check with model.
+    """
+    txt = TAG_RE.sub("", line).replace("’", "'").strip()
+
+    if EN_HEURISTIC_RE.search(txt):
+        try:
+            lang, prob = fastlid(txt)
+        except (IndexError, ValueError):
+            return False
+        return lang == "en"  # and prob >= prob_th
+
+    return False
+
+
+def sanitize_example_id(raw_id) -> str:
+    value = str(raw_id).strip()
+    value = value.replace("/", "_").replace("\\", "_")
+    value = SAFE_ID_RE.sub("_", value)
+    return value.strip("._") or "sample"
 
 
 def fuse_until_limits(
@@ -163,7 +193,7 @@ def save_hu_dataset_locally(config, audio_dir, transcript_dir):
     """Save HuggingFace dataset examples locally as audio and SRT or collect sentences.
     Returns list of TSV paths for sentence-based entries.
     """
-    split_name = config["split_name"]
+    split_name = config.get("hu_input_split", config["split_name"])
     out_folder = config["out_folder"]
 
     hu_names = config["hu_datasets"]
@@ -174,23 +204,55 @@ def save_hu_dataset_locally(config, audio_dir, transcript_dir):
         ds.select_columns(sorted(overlapping_cols)) for ds in datasets_list
     ]
     ds = concatenate_datasets(datasets_list)
+
+    # Optional filtering: keep only a predefined list of episode IDs.
+    episode_ids_file = config.get("hu_episode_ids_file")
+    if episode_ids_file:
+        ids_path = Path(episode_ids_file)
+        if not ids_path.exists():
+            raise FileNotFoundError(f"Episode IDs file not found: {ids_path}")
+        with open(ids_path, "r", encoding="utf-8") as f:
+            allowed_ids = {line.strip() for line in f if line.strip()}
+        if "id" not in ds.column_names:
+            raise ValueError(
+                "hu_episode_ids_file was provided, but source dataset has no 'id' column."
+            )
+        ds = ds.filter(lambda example: str(example["id"]) in allowed_ids)
+
     sentence_entries = []
     for idx, example in tqdm(
         enumerate(ds), total=len(ds), desc=f"Saving examples to {audio_dir}"
     ):
         audio_field = example.get("audio")
-        if (
-            isinstance(audio_field, dict)
-            and "array" in audio_field
-            and "sampling_rate" in audio_field
-        ):
-            import soundfile as sf
-
-            audio_id = example.get("id", idx)
-            dest = audio_dir / f"{audio_id}.mp3"
-            sf.write(str(dest), audio_field["array"], audio_field["sampling_rate"])
+        if isinstance(audio_field, dict) and "array" in audio_field and "sampling_rate" in audio_field:
+            audio_array = audio_field["array"]
+            sampling_rate = audio_field["sampling_rate"]
+        elif hasattr(audio_field, "get_all_samples"):
+            # datasets>=4 may expose audio as an AudioDecoder object
+            samples = audio_field.get_all_samples()
+            audio_array = samples.data
+            sampling_rate = samples.sample_rate
+            if hasattr(audio_array, "detach"):
+                audio_array = audio_array.detach()
+            if hasattr(audio_array, "cpu"):
+                audio_array = audio_array.cpu()
+            if hasattr(audio_array, "numpy"):
+                audio_array = audio_array.numpy()
         else:
             raise ValueError(f"Could not handle audio field {audio_field}")
+
+        import numpy as np
+        import soundfile as sf
+
+        audio_id = sanitize_example_id(example.get("id", idx))
+        dest = audio_dir / f"{audio_id}.wav"
+        audio_array = np.asarray(audio_array)
+        if audio_array.ndim == 2 and audio_array.shape[0] <= 8 and audio_array.shape[1] > audio_array.shape[0]:
+            # torchcodec may return channel-first tensors
+            audio_array = audio_array.T
+        if audio_array.dtype not in (np.float32, np.float64, np.int16, np.int32):
+            audio_array = audio_array.astype(np.float32)
+        sf.write(str(dest), audio_array, int(sampling_rate), format="WAV")
 
         srt_text = example.get("srt")
         if srt_text is not None:

@@ -70,6 +70,8 @@ cut_initial_audio: true
 
 # Remove French language samples (uses heuristic + model detection)
 filter_french: false
+# Remove English language samples (uses heuristic + model detection)
+filter_english: false
 
 # Remove samples containing specific keywords
 # Useful to exclude:

@@ -3,10 +3,11 @@ from dataclasses import dataclass
 from typing import Iterator
 
 import numpy as np
-
-from webrtcvad import Vad
-
 from silero_vad import load_silero_vad, read_audio, get_speech_timestamps
+try:
+    from webrtcvad import Vad
+except ImportError:  # optional dependency; only needed for VoiceActivityDetector
+    Vad = None
 
 SILERO_MODEL = load_silero_vad()
 
@@ -26,6 +27,11 @@ class VoiceActivityDetector:
         rate_voiced_frames_threshold: float = 0.9,
         rate_unvoiced_frames_threshold: float = 0.9,
     ) -> None:
+        if Vad is None:
+            raise ImportError(
+                "VoiceActivityDetector requires 'webrtcvad' (or 'webrtcvad-wheels'). "
+                "Default pipeline uses silero_vad_collector and does not need it."
+            )
         self.vad = Vad(aggressiveness)
 
         self.frame_duration_ms = frame_duration_ms

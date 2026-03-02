@@ -8,6 +8,7 @@ from whisper_prep.utils import (
     parse_args,
     get_compression_ratio,
     is_french,
+    is_english,
     netflix_normalize_all_srts_in_folder,
     save_hu_dataset_locally,
     netflix_normalize_file,
@@ -108,6 +109,15 @@ def main(config=None):
                 Path(out_folder, "french_examples.csv"), sep="\t"
             )
             df_dataframe = df_dataframe[~french_idx]
+    
+    # Filter out English if requested
+    if config.get("filter_english", False):
+        english_idx = df_dataframe["text"].apply(is_english)
+        if english_idx.any():
+            df_dataframe[english_idx].to_csv(
+                Path(out_folder, "english_examples.csv"), sep="\t"
+            )
+            df_dataframe = df_dataframe[~english_idx]
 
     # Filter out chunks with certain words if specified
     if "filter_words" in config:
