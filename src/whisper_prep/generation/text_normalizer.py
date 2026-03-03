@@ -153,16 +153,12 @@ ELLIPSIS = r"(?:\.{3}|…)"  # ASCII or Unicode
 
 
 def normalize_triple_dots(text: str) -> str:
-    # ────────────────────────────────────────────────────────────────────────
-    # 1️⃣  collapse any run of dots/ellipses to one period
-    #     add a space _only_ if the next char begins a word/number
-    # ────────────────────────────────────────────────────────────────────────
-    def _collapse(match: re.Match) -> str:
-        # peek at the next printable char (if any)
-        after = match.string[match.end() : match.end() + 1]
-        return ". " if after and after.isalnum() else "."
+    # Normalize bracketed ellipsis first: [...] or […] -> ...
+    text = re.sub(r"\[\s*(?:\.{3,}|…+)\s*\]", "...", text)
 
-    text = re.sub(ELLIPSIS + r"\s*", _collapse, text)
+    # Normalize any triple-dot/ellipsis run to ASCII triple dots.
+    # Examples: "..." -> "...", "......" -> "...", "……" -> "..."
+    text = re.sub(r"(?:\.{3,}|…+)", "...", text)
 
     # ────────────────────────────────────────────────────────────────────────
     # 2️⃣  tidy punctuation spacing (same as before, but ellipses are gone)
