@@ -26,8 +26,13 @@ def ljson_to_pandas(json_path: Union[str, Path]) -> pd.DataFrame:
 
 
 def pandas_to_hf_dataset(train_meta_file: pd.DataFrame, split_name: str = "train"):
-
-    dataset_train = Dataset.from_pandas(train_meta_file)
+    train_meta_file = train_meta_file.copy()
+    # Datasets>=4 with recent pyarrow can fail casting audio from large_string.
+    # Build the expected Audio storage struct explicitly.
+    train_meta_file["audio"] = train_meta_file["audio"].apply(
+        lambda p: {"path": str(p), "bytes": None}
+    )
+    dataset_train = Dataset.from_pandas(train_meta_file, preserve_index=False)
 
     dataset = DatasetDict()
     dataset[split_name] = dataset_train
