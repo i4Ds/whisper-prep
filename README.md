@@ -140,6 +140,7 @@ Set up a `.yaml` configuration file. See `example.yaml` for a complete example.
 # Output structure: out_folder_base/dataset_name/split_name
 dataset_name: my_dataset
 split_name: train
+language: de
 out_folder_base: /path/to/output
 
 # Data Sources (choose one or more)
