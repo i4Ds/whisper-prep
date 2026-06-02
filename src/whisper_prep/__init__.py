@@ -80,6 +80,7 @@ def main(config=None):
     dp = DataProcessor(
         audio_dir=audio_dir,
         transcript_dir=transcript_dir,
+        language=config.get("language", "de"),
         output=output_file,
         dump_dir=dump_dir,
         cut_initial_audio=config.get("cut_initial_audio", False),
