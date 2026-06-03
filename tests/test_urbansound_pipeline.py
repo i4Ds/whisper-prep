@@ -275,6 +275,50 @@ class TestCombineTsvNanSentence(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Unit tests: class-hours balance in build_source_tsv
+# ---------------------------------------------------------------------------
+
+class TestClassHoursBalance(unittest.TestCase):
+    """Each class must reach exactly target_seconds_per_class within one clip."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.extracted, self.df = make_fake_urbansound(self.tmp)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def test_per_class_hours_within_one_clip_of_target(self):
+        from scripts.prepare_urbansound_silence_dataset import CLASS_NAMES, build_source_tsv
+
+        target_h = 0.002  # per class
+        tsv_path = self.tmp / "out.tsv"
+        build_source_tsv(
+            df=self.df,
+            extracted=self.extracted,
+            free_sound_dir=self.tmp / "no_freesound",
+            tsv_path=tsv_path,
+            target_hours_total=target_h * len(CLASS_NAMES),
+            seed=0,
+        )
+        df = pd.read_csv(tsv_path, sep="\t", keep_default_na=False)
+        us = df[df["client_id"] != "freesound"]
+
+        # Fake clips are 2 s each; compute row counts per class
+        target_s = target_h * 3600
+        clip_dur = 2.0  # our make_fake_urbansound writes 2 s clips
+
+        for class_name in CLASS_NAMES.values():
+            rows = (us["client_id"] == class_name).sum()
+            actual_s = rows * clip_dur
+            # Should overshoot target by at most one clip duration
+            self.assertGreaterEqual(actual_s, target_s,
+                                    f"{class_name}: under target")
+            self.assertLess(actual_s, target_s + clip_dur + 0.01,
+                            f"{class_name}: overshot by more than one clip")
+
+
+# ---------------------------------------------------------------------------
 # Integration: full pipeline with tiny fake data
 # ---------------------------------------------------------------------------
 
@@ -375,6 +419,31 @@ class TestSkipGeneratePath(unittest.TestCase):
         self.assertNotIn("clips_folders", cfg)
         self.assertEqual(cfg["keep_empty_chance"], 1.0)
         self.assertFalse(cfg["drop_empty_text"])
+
+    def test_tsv_only_does_not_run_pipeline(self):
+        """--tsv-only must write TSV + config but leave audios/ untouched."""
+        import sys
+        extracted, df = make_fake_urbansound(self.tmp)
+        out_base = self.tmp / "wp_out"
+
+        sys.argv = [
+            "prepare_urbansound_silence_dataset.py",
+            "--root", str(self.tmp),
+            "--out-folder-base", str(out_base),
+            "--target-hours-total", "0.01",
+            "--tsv-only",
+        ]
+        from scripts.prepare_urbansound_silence_dataset import main
+        main()
+
+        tsv = out_base / "urbansound" / "train" / "inputs" / "fusion_empty_sentences.tsv"
+        self.assertTrue(tsv.exists(), "TSV not created in --tsv-only mode")
+
+        # Pipeline dirs must NOT have been created
+        audios_dir = out_base / "urbansound" / "train" / "audios"
+        created_dir = out_base / "urbansound" / "train" / "created_dataset"
+        self.assertFalse(audios_dir.exists(), "audios/ should not exist in --tsv-only")
+        self.assertFalse(created_dir.exists(), "created_dataset/ should not exist in --tsv-only")
 
     def test_skip_generate_runs_dataprocessor_on_existing_audio(self):
         """With pre-existing fused audio + SRT, --skip-generate produces records."""
