@@ -166,3 +166,4 @@ test = ["coverage"]
 # which executes the function `main` from this package when invoked.
 [project.scripts]
 whisper_prep = "whisper_prep:main"
+whisper_prep_download_hf = "whisper_prep.download_hf_dataset:main"

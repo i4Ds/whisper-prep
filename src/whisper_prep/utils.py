@@ -1,8 +1,10 @@
 import argparse
+import csv
 import os
 import re
 import zlib
 from glob import glob
+from dataclasses import dataclass
 from pathlib import Path
 
 import pysubs2
@@ -12,6 +14,12 @@ from tqdm.auto import tqdm
 
 NETFLIX_CHAR = 42
 NETFLIX_DUR = 7
+
+
+@dataclass
+class DownloadedDatasetPaths:
+    sentence_tsvs: list[str]
+    transcripts_tsv: str | None = None
 
 
 def parse_args() -> argparse.Namespace:
@@ -191,10 +199,16 @@ def netflix_normalize_all_srts_in_folder(folder: str = ".", skip_words: list = N
 
 def save_hu_dataset_locally(config, audio_dir, transcript_dir):
     """Save HuggingFace dataset examples locally as audio and SRT or collect sentences.
-    Returns list of TSV paths for sentence-based entries.
+    Returns local TSV metadata paths.
     """
     split_name = config.get("hu_input_split", config["split_name"])
     out_folder = config["out_folder"]
+    input_format = config.get("hf_input_format", "auto")
+    if input_format not in {"auto", "srt", "sentences"}:
+        raise ValueError(
+            "hf_input_format must be one of 'auto', 'srt', or 'sentences', "
+            f"got {input_format!r}"
+        )
 
     hu_names = config["hu_datasets"]
 
@@ -220,6 +234,7 @@ def save_hu_dataset_locally(config, audio_dir, transcript_dir):
         ds = ds.filter(lambda example: str(example["id"]) in allowed_ids)
 
     sentence_entries = []
+    srt_entries = []
     for idx, example in tqdm(
         enumerate(ds), total=len(ds), desc=f"Saving examples to {audio_dir}"
     ):
@@ -255,10 +270,24 @@ def save_hu_dataset_locally(config, audio_dir, transcript_dir):
         sf.write(str(dest), audio_array, int(sampling_rate), format="WAV")
 
         srt_text = example.get("srt")
-        if srt_text is not None:
+        use_srt = input_format != "sentences" and srt_text is not None
+        if input_format == "srt" and srt_text is None:
+            raise ValueError(
+                "hf_input_format is 'srt', but at least one dataset entry has no 'srt' column/value"
+            )
+
+        if use_srt:
             srt_file = transcript_dir / f"{dest.stem}.srt"
             with open(srt_file, "w", encoding="utf-8") as f:
                 f.write(srt_text)
+            srt_entries.append(
+                {
+                    "srt_path": str(srt_file),
+                    "audio_path": str(dest),
+                    "language": example.get("language", config.get("language", "")),
+                    "id": dest.stem,
+                }
+            )
         else:
             text = example.get("sentence") or example.get("text")
             if text is None:
@@ -269,10 +298,8 @@ def save_hu_dataset_locally(config, audio_dir, transcript_dir):
             sentence_entries.append(
                 {"path": dest.name, "sentence": text, "client_id": client_id}
             )
-    tsv_paths = []
+    sentence_tsvs = []
     if sentence_entries:
-        import csv
-
         tsv_file = Path(out_folder, "hf_sentences.tsv")
         with open(tsv_file, "w", encoding="utf-8", newline="") as f:
             writer = csv.DictWriter(
@@ -280,8 +307,20 @@ def save_hu_dataset_locally(config, audio_dir, transcript_dir):
             )
             writer.writeheader()
             writer.writerows(sentence_entries)
-        tsv_paths.append(str(tsv_file))
-    return tsv_paths
+        sentence_tsvs.append(str(tsv_file))
+    transcripts_tsv = None
+    if srt_entries:
+        tsv_file = Path(out_folder, "transcripts_mapping.tsv")
+        with open(tsv_file, "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(
+                f,
+                delimiter="\t",
+                fieldnames=["srt_path", "audio_path", "language", "id"],
+            )
+            writer.writeheader()
+            writer.writerows(srt_entries)
+        transcripts_tsv = str(tsv_file)
+    return DownloadedDatasetPaths(sentence_tsvs, transcripts_tsv)
 
 
 if __name__ == "__main__":

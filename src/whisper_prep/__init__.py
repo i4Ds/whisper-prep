@@ -10,12 +10,58 @@ from whisper_prep.utils import (
     is_french,
     is_english,
     netflix_normalize_all_srts_in_folder,
-    save_hu_dataset_locally,
     netflix_normalize_file,
 )
 from whisper_prep.dataset.convert import ljson_to_pandas, pandas_to_hf_dataset
 import csv
-from tqdm import tqdm
+
+
+def _as_path_or_none(value):
+    return Path(value) if value else None
+
+
+def _is_sentence_source_configured(config):
+    return bool(config.get("tsv_paths") and config.get("clips_folders"))
+
+
+def _resolve_input_sources(config, audio_dir, transcript_dir):
+    if config.get("hu_datasets"):
+        raise ValueError(
+            "Direct hu_datasets processing has been split out. Run "
+            "whisper_prep_download_hf first, then use the generated "
+            "hf_sentences.tsv or transcripts_mapping.tsv as a local input."
+        )
+
+    transcripts_tsv = config.get("transcripts_tsv")
+    has_sentence_source = _is_sentence_source_configured(config)
+    local_audio_dir = _as_path_or_none(
+        config.get("source_audio_dir")
+    )
+    local_transcript_dir = _as_path_or_none(
+        config.get("source_transcript_dir")
+    )
+    has_folder_source = local_audio_dir is not None or local_transcript_dir is not None
+
+    routes = [
+        bool(transcripts_tsv),
+        has_sentence_source,
+        has_folder_source,
+    ]
+    if sum(routes) > 1:
+        raise ValueError(
+            "Configure exactly one input route: transcripts_tsv, "
+            "source_audio_dir/source_transcript_dir, or tsv_paths/clips_folders."
+        )
+
+    if has_folder_source:
+        if not local_audio_dir or not local_transcript_dir:
+            raise ValueError(
+                "Both source_audio_dir and source_transcript_dir are required "
+                "for folder-based local SRT processing."
+            )
+        return local_audio_dir, local_transcript_dir, transcripts_tsv, False
+
+    return audio_dir, transcript_dir, transcripts_tsv, True
 
 
 def main(config=None):
@@ -33,8 +79,9 @@ def main(config=None):
 
     config["out_folder"] = out_folder
 
-    hu_names = config.get("hu_datasets")
-    transcripts_tsv = config.get("transcripts_tsv")
+    keep_empty_chance = config.get(
+        "keep_empty_chance", 0.0
+    )
 
     # Setup paths and folders
     audio_dir = Path(out_folder, "audios")
@@ -46,22 +93,19 @@ def main(config=None):
     dump_dir = Path(output_dir, "dump")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Step 1: download HF dataset assets (audio + real SRT or sentence TSV) if requested
-    sentence_tsvs = []
-    if hu_names:
-        sentence_tsvs = save_hu_dataset_locally(config, audio_dir, transcript_dir)
+    (
+        process_audio_dir,
+        process_transcript_dir,
+        transcripts_tsv,
+        can_fuse_sentences,
+    ) = _resolve_input_sources(config, audio_dir, transcript_dir)
 
-    # Step 2: synthesize SRTs from sentences only when needed
-    if not transcripts_tsv:
-        # HF sentence-only datasets → generate SRTs from HF-derived TSVs
-        if sentence_tsvs:
-            config["tsv_paths"] = sentence_tsvs
-            config["clips_folders"] = [str(audio_dir)] * len(sentence_tsvs)
-            config["partials"] = config.get("partials", [1.0] * len(sentence_tsvs))
+    # Synthesize SRTs from sentence-level inputs only when needed.
+    if not transcripts_tsv and can_fuse_sentences:
+        if _is_sentence_source_configured(config):
             generate_fold_from_yaml(config)
-        # Local sentence-TSV inputs (no HF) → generate SRTs from sentences
-        elif not hu_names:
-            generate_fold_from_yaml(config)
+        process_audio_dir = audio_dir
+        process_transcript_dir = transcript_dir
 
     # Get filter_words for Netflix normalization and DataProcessor
     filter_words = config.get("filter_words", [])
@@ -74,18 +118,21 @@ def main(config=None):
                 for row in reader:
                     netflix_normalize_file(row["srt_path"], skip_words=filter_words)
         else:
-            netflix_normalize_all_srts_in_folder(transcript_dir, skip_words=filter_words)
+            netflix_normalize_all_srts_in_folder(
+                process_transcript_dir, skip_words=filter_words
+            )
     
     # Step 4: segment & timestamp via DataProcessor
     dp = DataProcessor(
-        audio_dir=audio_dir,
-        transcript_dir=transcript_dir,
+        audio_dir=process_audio_dir,
+        transcript_dir=process_transcript_dir,
         language=config.get("language", "de"),
         output=output_file,
         dump_dir=dump_dir,
         cut_initial_audio=config.get("cut_initial_audio", False),
         filter_segment_words=filter_words,
         transcripts_tsv=transcripts_tsv,
+        keep_empty_chance=keep_empty_chance,
     )
     dp.run()
 
@@ -93,8 +140,13 @@ def main(config=None):
     print(f"Loaded {len(df_dataframe)} samples")
 
     # Basic filtering on text length and compression ratio
-    high_compression = df_dataframe["text"].apply(get_compression_ratio) >= 2.4
-    few_words = df_dataframe["text"].str.split().str.len() <= 8
+    non_empty_text = df_dataframe["text"].str.strip() != ""
+    high_compression = (
+        df_dataframe["text"].apply(get_compression_ratio) >= 2.4
+    ) & non_empty_text
+    few_words = (df_dataframe["text"].str.split().str.len() <= 8) & (
+        non_empty_text | (keep_empty_chance <= 0)
+    )
     bad_idx = high_compression | few_words
     if bad_idx.any():
         print(f"Found {bad_idx.sum()} problematic samples:")

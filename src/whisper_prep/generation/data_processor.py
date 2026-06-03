@@ -1,4 +1,5 @@
 import json
+import random
 import unicodedata
 import warnings
 from collections import deque
@@ -38,6 +39,7 @@ class DataProcessor:
         max_prompt_length: int = 223,  # 223 tokens and some extra for the time stamps.
         max_tokens_length: int = 219,
         subsampling_factor_for_silence: int = 1,
+        keep_empty_chance: float = 0.0,
         rep_threshold: int = 3,
         tokenizer_type: str = "multilingual",
         normalize_unicode: bool = False,
@@ -57,6 +59,7 @@ class DataProcessor:
         self.max_prompt_length = max_prompt_length
         self.max_tokens_length = max_tokens_length
         self.subsampling_factor_for_silence = subsampling_factor_for_silence
+        self.keep_empty_chance = keep_empty_chance
         self.rep_threshold = rep_threshold
         self.tokenizer_type = tokenizer_type
         self.normalize_unicode = normalize_unicode
@@ -101,6 +104,11 @@ class DataProcessor:
 
         if Path(self.output).exists():
             raise ValueError(f"Output file {self.output} already exists")
+
+        if not 0 <= self.keep_empty_chance <= 1:
+            raise ValueError(
+                f"keep_empty_chance must be between 0 and 1, got {self.keep_empty_chance}"
+            )
 
     def run(self) -> None:
         if self.with_timestamps:
@@ -541,6 +549,11 @@ class DataProcessor:
                 span_cursor += 1
 
             if not span_utterances:
+                records.extend(
+                    self._create_empty_records_for_span(
+                        audio, audio_path, dump_dir, span_start, span_end
+                    )
+                )
                 continue
 
             # Optionally trim initial audio only for the first safe span.
@@ -564,13 +577,13 @@ class DataProcessor:
                     idx += 1
                     continue
 
-                segment_audio_path = self._save_segment_audio(
-                    audio, segment_start, segment_end, dump_dir
-                )
                 prompt = self._get_prompt(prompt_buffer)
 
                 segment_utterances = []
-                while idx < len(span_utterances) and span_utterances[idx].start < segment_end:
+                while (
+                    idx < len(span_utterances)
+                    and span_utterances[idx].start < segment_end
+                ):
                     segment_utterances.append(span_utterances[idx])
                     idx += 1
 
@@ -614,7 +627,12 @@ class DataProcessor:
                         f"{format_timestamp(segment_end / 1000)}) because it is too long "
                         f"({tokens_length} tokens)"
                     )
+                elif not segment_utterances and random.random() >= self.keep_empty_chance:
+                    pass
                 else:
+                    segment_audio_path = self._save_segment_audio(
+                        audio, segment_start, segment_end, dump_dir
+                    )
                     record = Record(
                         audio_path=segment_audio_path,
                         language=self.language,
@@ -633,6 +651,42 @@ class DataProcessor:
                     segment_start = segment_utterances[-1].start
                     idx -= 1
 
+            if segment_start < span_end:
+                records.extend(
+                    self._create_empty_records_for_span(
+                        audio, audio_path, dump_dir, segment_start, span_end
+                    )
+                )
+
+        return records
+
+    def _create_empty_records_for_span(
+        self,
+        audio: torch.Tensor,
+        audio_path: Path,
+        dump_dir: Path,
+        span_start: int,
+        span_end: int,
+    ) -> List[Record]:
+        records = []
+        segment_start = span_start
+        while segment_start < span_end:
+            segment_end = min(segment_start + DURATION, span_end)
+            if segment_start >= segment_end:
+                break
+            if random.random() < self.keep_empty_chance:
+                segment_audio_path = self._save_segment_audio(
+                    audio, segment_start, segment_end, dump_dir
+                )
+                records.append(
+                    Record(
+                        audio_path=segment_audio_path,
+                        language=self.language,
+                        text="",
+                        prompt="",
+                    )
+                )
+            segment_start = segment_end
         return records
 
     def _save_segment_audio(

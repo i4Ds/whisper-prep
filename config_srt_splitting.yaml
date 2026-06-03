@@ -21,30 +21,43 @@ out_folder_base: ./datasets
 # Do NOT use tsv_paths/clips_folders when using transcripts_tsv
 transcripts_tsv: "./data/transcripts_mapping.tsv"
 
-# Leave these null when using transcripts_tsv
+# Leave sentence-fusion inputs null when using transcripts_tsv
 tsv_paths: null
 clips_folders: null
 partials: null
-hu_datasets: null
 
 # Alternative Method 2: Folder-based (auto-matching)
 # Place audio and SRT files with matching names in separate folders:
 #   ./audio/movie_001.mp3  ↔  ./transcripts/movie_001.srt
 #   ./audio/podcast_002.mp3  ↔  ./transcripts/podcast_002.srt
-# Then leave transcripts_tsv null and uncomment above using tsv_paths approach
+# Then set transcripts_tsv null and configure both source folders:
+# transcripts_tsv: null
+# source_audio_dir: "./data/audio"
+# source_transcript_dir: "./data/transcripts"
+#
+# Alternative Method 3: Download first from Hugging Face, then process locally
+# python download_hf_dataset.py \
+#   --dataset username/dataset \
+#   --output-dir ./data/downloaded/my_dataset/train \
+#   --split train \
+#   --format srt
+#
+# Then set:
+# transcripts_tsv: "./data/downloaded/my_dataset/train/transcripts_mapping.tsv"
 
 # ============================================================================
 # AUDIO SEGMENTATION CONFIGURATION
 # ============================================================================
-# These settings are IGNORED when using transcripts_tsv
-# (segmentation is always 30 seconds for Whisper compatibility)
+# SRT inputs are always cut into <=30-second Whisper samples.
+# The sentence-fusion settings (`maintain_speaker_chance`,
+# `n_samples_per_srt`, `normalize_text`, `overlap_chance`,
+# `max_overlap_chance`, `max_overlap_duration`, `vad_chance`) are only used
+# when starting from sentence-level TSV/HF data, not when starting from SRTs.
 
-maintain_speaker_chance: 0.5
-n_samples_per_srt: 16
-normalize_text: false
-overlap_chance: 0.0
-max_overlap_chance: 0.0
-max_overlap_duration: 0.0
+# Probability (0-1) of keeping 30-second samples with no transcript text.
+# This covers genuinely empty subtitle spans and no-speech/silence spans.
+# 0.0 drops them, 0.5 keeps about half, 1.0 keeps all.
+keep_empty_chance: 0.0
 
 # ============================================================================
 # SRT PROCESSING OPTIONS

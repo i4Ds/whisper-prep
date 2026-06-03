@@ -38,6 +38,8 @@ def _generate_wrapper(
     overlap_chance: float,
     max_overlap_chance: float,
     max_overlap_duration: float,
+    vad_chance: float,
+    keep_empty_chance: float,
     audio_format: str,
 ) -> None:
     try:
@@ -48,6 +50,8 @@ def _generate_wrapper(
             overlap_chance=overlap_chance,
             max_overlap_chance=max_overlap_chance,
             max_overlap_duration=max_overlap_duration,
+            vad_chance=vad_chance,
+            keep_empty_chance=keep_empty_chance,
             audio_format=audio_format,
         )
     except Exception as e:
@@ -75,87 +79,73 @@ def _generate(
     overlap_chance: float,
     max_overlap_chance: float,
     max_overlap_duration: float,
+    vad_chance: float,
+    keep_empty_chance: float,
     audio_format: str = "mp3",
 ) -> None:
     offset = 0
-    current_seg_dur = 0
-    current_seg_start = None
-    combined_text = ""
     combined_audio = AudioSegment.empty()
     captions = []
+    previous_space_after_speech = 0.0
 
-    for i, segment in enumerate(constructed_samples):
+    for segment in constructed_samples:
         audio_file_path = segment["path"]
-        sentence = segment["sentence"]
+        sentence = (segment["sentence"] or "").strip()
         audio_segment = read_audio(audio_file_path, resample_rate=16000)
         audio_duration_seconds = audio_segment.duration_seconds
-        current_seg_dur += audio_duration_seconds
 
-        # Determine start and end seconds using Voice Activity Detection (VAD)
-        start_second, end_second = silero_vad_collector(audio_file_path)
-
-        if end_second is None:
-            end_second = audio_duration_seconds
-        if not combined_text:
-            combined_text = sentence
+        # Determine speech bounds with VAD only for the configured sample rate.
+        if random.random() < vad_chance:
+            start_second, end_second = silero_vad_collector(audio_file_path)
+            vad_found_speech = end_second is not None and end_second > start_second
         else:
-            combined_text = f"{combined_text} {sentence}"
+            start_second, end_second = 0.0, audio_duration_seconds
+            vad_found_speech = True
+
+        if not sentence or not vad_found_speech:
+            if random.random() >= keep_empty_chance:
+                continue
+            sentence = ""
+            start_second = 0.0
+            end_second = audio_duration_seconds
 
         overlap_move = 0
 
-        # Check if the segment should overlap with the previous one
-        if i > 0 and random.random() < overlap_chance:
-            # Calculate the total available space for overlap
-            total_space = space_before_seconds + start_second
+        if len(combined_audio) > 0 and random.random() < overlap_chance:
+            total_space = previous_space_after_speech + start_second
 
-            # Determine the extent of overlap based on max_overlap_chance
             if random.random() < max_overlap_chance:
                 overlap_move = total_space + max_overlap_duration
             else:
                 overlap_move = random.uniform(0, total_space + max_overlap_duration)
 
-            current_seg_dur += audio_segment.duration_seconds - overlap_move
-
-            # Convert overlap duration to milliseconds
             overlap_move_ms = round(overlap_move * 1000)
-
-            # Split the current audio segment into two parts: overlap and rest
             overlap_audio = audio_segment[:overlap_move_ms]
             rest_audio = audio_segment[overlap_move_ms:]
 
-            # Overlay the overlap part on the end of the combined audio
             combined_audio = combined_audio.overlay(
                 overlap_audio, position=len(combined_audio) - overlap_move_ms
             )
-            # Append the rest of the audio segment to the combined audio
             combined_audio += rest_audio
         else:
-            # If no overlap, simply append the current audio segment to the combined audio
             combined_audio += audio_segment
-        if not current_seg_start:
-            current_seg_start = start_second - overlap_move + offset
-        # Create and add captions for each segment
-        # If the netflix rules are reached or the next speaker is not the same, fuse captions.
-        # Fix to make sure that every sentence causes a new caption.
-        # This is because normalization was moved to the SRT nornmalization, so that sentence level datasets
-        # And srt sources are the same. This should be fixed.
-        if len(combined_text) >= 0 or current_seg_dur >= 0:
-            caption = Caption(
-                start_second=current_seg_start,
-                end_second=offset + end_second - overlap_move,
-                text=combined_text,
+
+        if sentence:
+            captions.append(
+                Caption(
+                    start_second=start_second - overlap_move + offset,
+                    end_second=offset + end_second - overlap_move,
+                    text=sentence,
+                )
             )
-            captions.append(caption)
-            current_seg_start = None
-            combined_text = None
-            current_seg_dur = 0
-        else:
-            start_second = start_second - overlap_move
 
         offset += audio_segment.duration_seconds - overlap_move
-        space_before_seconds = audio_duration_seconds - end_second
+        previous_space_after_speech = audio_duration_seconds - end_second
 
     file_name = str(uuid.uuid4())
+
+    if len(combined_audio) == 0:
+        return
 
     save_path_audio = Path(audios_folder, f"{file_name}.{audio_format}")
     save_path_srt = Path(transcripts_folder, f"{file_name}.srt")
@@ -187,6 +177,8 @@ def generate_fold(
     overlap_chance: float,
     max_overlap_chance: float,
     max_overlap_duration: float,
+    vad_chance: float = 1.0,
+    keep_empty_chance: float = 0.0,
     audio_format: str = "mp3",
     n_jobs: int = 4,
     seed: int = 42,
@@ -204,10 +196,22 @@ def generate_fold(
     - overlap_chance (float): Probability that clips will overlap.
     - max_overlap_chance (float): Maximum allowed overlap probability.
     - max_overlap_duration (float): Maximum duration for overlap.
+    - vad_chance (float): Probability of running VAD for a sentence clip.
+    - keep_empty_chance (float): Probability of keeping blank text or no-speech clips.
     - audio_format (str): Desired audio format for output files.
     - n_jobs (int, optional): Number of jobs to run in parallel. Default is 2.
     - seed (int, optional): Seed for random number generation. Default is 42.
     """
+    for name, value in {
+        "maintain_speaker_chance": maintain_speaker_chance,
+        "overlap_chance": overlap_chance,
+        "max_overlap_chance": max_overlap_chance,
+        "vad_chance": vad_chance,
+        "keep_empty_chance": keep_empty_chance,
+    }.items():
+        if not 0 <= value <= 1:
+            raise ValueError(f"{name} must be between 0 and 1, got {value}")
+
     data = combine_tsvs_to_dataframe(tsv_paths, clips_folders, partials=partials)
 
     Path(out_folder).mkdir(parents=True, exist_ok=True)
@@ -293,6 +297,8 @@ def generate_fold(
                 overlap_chance=overlap_chance,
                 max_overlap_chance=max_overlap_chance,
                 max_overlap_duration=max_overlap_duration,
+                vad_chance=vad_chance,
+                keep_empty_chance=keep_empty_chance,
                 audio_format=audio_format,
             )
 
@@ -311,6 +317,8 @@ def generate_fold(
         overlap_chance=overlap_chance,
         max_overlap_chance=max_overlap_chance,
         max_overlap_duration=max_overlap_duration,
+        vad_chance=vad_chance,
+        keep_empty_chance=keep_empty_chance,
         audio_format=audio_format,
     )
 
