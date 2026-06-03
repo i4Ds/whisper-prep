@@ -1,0 +1,2 @@
+id	audio_path	srt_path	language
+filter_words_fixture	tests/assets/filter_words/filter_words_fixture.mp3	tests/assets/filter_words/filter_words_fixture.srt	de

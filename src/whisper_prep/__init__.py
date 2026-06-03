@@ -64,6 +64,37 @@ def _resolve_input_sources(config, audio_dir, transcript_dir):
     return audio_dir, transcript_dir, transcripts_tsv, True
 
 
+def _apply_basic_text_filters(
+    df_dataframe,
+    out_folder,
+    min_text_words=8,
+    drop_empty_text=True,
+):
+    non_empty_text = df_dataframe["text"].str.strip() != ""
+    high_compression = (
+        df_dataframe["text"].apply(get_compression_ratio) >= 2.4
+    ) & non_empty_text
+
+    bad_idx = high_compression
+
+    if min_text_words is not None and min_text_words > 0:
+        few_words = (
+            df_dataframe["text"].str.split().str.len() <= min_text_words
+        ) & non_empty_text
+        bad_idx = bad_idx | few_words
+
+    if drop_empty_text:
+        empty_text = ~non_empty_text
+        bad_idx = bad_idx | empty_text
+
+    if bad_idx.any():
+        print(f"Found {bad_idx.sum()} problematic samples:")
+        df_dataframe[bad_idx].to_csv(Path(out_folder, "bad_examples.csv"), sep="\t")
+        df_dataframe = df_dataframe[~bad_idx]
+
+    return df_dataframe
+
+
 def main(config=None):
     if config is None:
         args = parse_args()
@@ -82,6 +113,8 @@ def main(config=None):
     keep_empty_chance = config.get(
         "keep_empty_chance", 0.0
     )
+    min_text_words = config.get("min_text_words", 8)
+    drop_empty_text = config.get("drop_empty_text", keep_empty_chance <= 0)
 
     # Setup paths and folders
     audio_dir = Path(out_folder, "audios")
@@ -139,19 +172,13 @@ def main(config=None):
     df_dataframe = ljson_to_pandas(json_path=output_file)
     print(f"Loaded {len(df_dataframe)} samples")
 
-    # Basic filtering on text length and compression ratio
-    non_empty_text = df_dataframe["text"].str.strip() != ""
-    high_compression = (
-        df_dataframe["text"].apply(get_compression_ratio) >= 2.4
-    ) & non_empty_text
-    few_words = (df_dataframe["text"].str.split().str.len() <= 8) & (
-        non_empty_text | (keep_empty_chance <= 0)
+    # Basic filtering on text length, empty text, and compression ratio.
+    df_dataframe = _apply_basic_text_filters(
+        df_dataframe,
+        out_folder,
+        min_text_words=min_text_words,
+        drop_empty_text=drop_empty_text,
     )
-    bad_idx = high_compression | few_words
-    if bad_idx.any():
-        print(f"Found {bad_idx.sum()} problematic samples:")
-        df_dataframe[bad_idx].to_csv(Path(out_folder, "bad_examples.csv"), sep="\t")
-        df_dataframe = df_dataframe[~bad_idx]
 
     # Filter out French if requested
     if config.get("filter_french", False):

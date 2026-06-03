@@ -308,22 +308,38 @@ class DataProcessor:
                 )
                 if transcript_path.exists():
                     try:
+                        filtered_for_speech: List[dict] = []
                         if transcript_path.suffix == ".srt":
                             utterances_for_speech = self.read_utterances_from_srt(
-                                transcript_path, self.normalize_unicode
+                                transcript_path,
+                                self.normalize_unicode,
+                                self.filter_segment_words,
+                                filtered_for_speech,
+                                speech_id,
                             )
                         elif transcript_path.suffix == ".vtt":
                             utterances_for_speech = self.read_utterances_from_vtt(
-                                transcript_path, self.normalize_unicode
+                                transcript_path,
+                                self.normalize_unicode,
+                                self.filter_segment_words,
+                                filtered_for_speech,
+                                speech_id,
                             )
+                        self.filtered_segment_records.extend(filtered_for_speech)
                         # Sanitize utterances, if necessary.
                         # Takes care of some random timestamps error produces by the VAD of whisperx.
                         if not self._is_valid_utterances(utterances_for_speech, 0):
                             utterances_for_speech = self._sanitize_utterances(
                                 utterances_for_speech
                             )
+                        blocked_intervals = [
+                            (r["start_ms"], r["end_ms"]) for r in filtered_for_speech
+                        ]
                         records = self._create_records_with_timestamps(
-                            utterances_for_speech, audio_path
+                            utterances_for_speech,
+                            audio_path,
+                            speech_id,
+                            blocked_intervals=blocked_intervals,
                         )
                         self.write_records(records, self.output)
                         transcript_found = True
