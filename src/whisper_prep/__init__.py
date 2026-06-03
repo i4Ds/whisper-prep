@@ -166,8 +166,15 @@ def main(config=None):
         filter_segment_words=filter_words,
         transcripts_tsv=transcripts_tsv,
         keep_empty_chance=keep_empty_chance,
+        use_source_audio_for_empty_full_segments=config.get(
+            "use_source_audio_for_empty_full_segments", False
+        ),
     )
     dp.run()
+
+    if not output_file.exists():
+        print("WARNING: no records were produced; data.ljson was not created.")
+        return
 
     df_dataframe = ljson_to_pandas(json_path=output_file)
     print(f"Loaded {len(df_dataframe)} samples")

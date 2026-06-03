@@ -46,6 +46,7 @@ class DataProcessor:
         cut_initial_audio: bool = False,
         filter_segment_words: Optional[List[str]] = None,
         transcripts_tsv: Optional[str] = None,
+        use_source_audio_for_empty_full_segments: bool = False,
     ) -> None:
         self.with_timestamps = with_timestamps
         self.audio_dir = audio_dir
@@ -66,6 +67,9 @@ class DataProcessor:
         self.cut_initial_audio = cut_initial_audio
         self.filter_segment_words = filter_segment_words
         self.transcripts_tsv = transcripts_tsv
+        self.use_source_audio_for_empty_full_segments = (
+            use_source_audio_for_empty_full_segments
+        )
         self.filtered_segment_records: List[dict] = []
 
         self._verify_args()
@@ -283,12 +287,31 @@ class DataProcessor:
                         blocked_intervals = [
                             (r["start_ms"], r["end_ms"]) for r in filtered_for_speech
                         ]
-                        records = self._create_records_with_timestamps(
-                            utterances,
-                            audio_path,
-                            speech_id,
-                            blocked_intervals=blocked_intervals,
-                        )
+                        duration_seconds = row.get("duration_seconds")
+                        if (
+                            self.use_source_audio_for_empty_full_segments
+                            and not utterances
+                            and not blocked_intervals
+                            and duration_seconds
+                            and float(duration_seconds) * 1000 <= DURATION
+                        ):
+                            records = []
+                            if random.random() < self.keep_empty_chance:
+                                records.append(
+                                    Record(
+                                        audio_path=str(audio_path.absolute()),
+                                        language=self.language,
+                                        text="",
+                                        prompt="",
+                                    )
+                                )
+                        else:
+                            records = self._create_records_with_timestamps(
+                                utterances,
+                                audio_path,
+                                speech_id,
+                                blocked_intervals=blocked_intervals,
+                            )
                         self.write_records(records, self.output)
                     except Exception as e:
                         print(e)
@@ -691,9 +714,17 @@ class DataProcessor:
             if segment_start >= segment_end:
                 break
             if random.random() < self.keep_empty_chance:
-                segment_audio_path = self._save_segment_audio(
-                    audio, segment_start, segment_end, dump_dir
-                )
+                if (
+                    self.use_source_audio_for_empty_full_segments
+                    and segment_start == 0
+                    and segment_end == span_end
+                    and span_end <= DURATION
+                ):
+                    segment_audio_path = str(audio_path.absolute())
+                else:
+                    segment_audio_path = self._save_segment_audio(
+                        audio, segment_start, segment_end, dump_dir
+                    )
                 records.append(
                     Record(
                         audio_path=segment_audio_path,
