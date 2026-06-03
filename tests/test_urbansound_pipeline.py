@@ -346,5 +346,80 @@ class TestFullPipelineIntegration(unittest.TestCase):
             self.assertTrue(Path(path).exists(), f"Audio file missing: {path}")
 
 
+# ---------------------------------------------------------------------------
+# Integration: --skip-generate path (DataProcessor only, existing fused audio)
+# ---------------------------------------------------------------------------
+
+class TestSkipGeneratePath(unittest.TestCase):
+    """Verify that build_skip_generate_config uses the folder-source route."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def test_skip_generate_config_uses_folder_route(self):
+        from scripts.prepare_urbansound_silence_dataset import build_skip_generate_config
+        cfg = build_skip_generate_config(
+            dataset_name="urbansound",
+            split_name="train",
+            language="en",
+            out_folder_base=Path("/tmp/wp"),
+            repo_id="i4ds/urbansound",
+            upload=False,
+        )
+        self.assertIn("source_audio_dir", cfg)
+        self.assertIn("source_transcript_dir", cfg)
+        self.assertNotIn("tsv_paths", cfg)
+        self.assertNotIn("clips_folders", cfg)
+        self.assertEqual(cfg["keep_empty_chance"], 1.0)
+        self.assertFalse(cfg["drop_empty_text"])
+
+    def test_skip_generate_runs_dataprocessor_on_existing_audio(self):
+        """With pre-existing fused audio + SRT, --skip-generate produces records."""
+        import wave, struct
+
+        out_folder = self.tmp / "wp_out" / "urbansound" / "train"
+        audios_dir = out_folder / "audios"
+        transcripts_dir = out_folder / "transcripts"
+        audios_dir.mkdir(parents=True)
+        transcripts_dir.mkdir(parents=True)
+
+        # Write two fake 35 s fused audio files + empty SRTs (simulating generate_fold output)
+        for i in range(2):
+            wav_path = audios_dir / f"fake_fused_{i}.wav"
+            n = int(35 * 16000)
+            with wave.open(str(wav_path), "w") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(16000)
+                wf.writeframes(struct.pack(f"<{n}h", *([0] * n)))
+            (transcripts_dir / f"fake_fused_{i}.srt").write_text("", encoding="utf-8")
+
+        from scripts.prepare_urbansound_silence_dataset import build_skip_generate_config
+        config = build_skip_generate_config(
+            dataset_name="urbansound",
+            split_name="train",
+            language="en",
+            out_folder_base=self.tmp / "wp_out",
+            repo_id="i4ds/urbansound",
+            upload=False,
+        )
+
+        import whisper_prep
+        whisper_prep.main(config)
+
+        ljson = out_folder / "created_dataset" / "data.ljson"
+        self.assertTrue(ljson.exists(), "data.ljson not created in --skip-generate path")
+
+        from whisper_prep.dataset.convert import ljson_to_pandas
+        df = ljson_to_pandas(ljson)
+        # 2 files × 35 s → 2+2 = 4 segments (30 s + 5 s each)
+        self.assertGreaterEqual(len(df), 2)
+        self.assertTrue((df["text"].astype(str).str.strip() == "").all())
+        self.assertTrue((df["language"] == "en").all())
+
+
 if __name__ == "__main__":
     unittest.main()
