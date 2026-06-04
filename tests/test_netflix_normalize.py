@@ -142,7 +142,3 @@ class TestFuseUntilLimits(unittest.TestCase):
         
         self.assertFalse(changed, "Should not change single segment")
         self.assertEqual(len(subs), 1)
-
-
-if __name__ == "__main__":
-    unittest.main()

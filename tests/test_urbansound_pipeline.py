@@ -488,7 +488,3 @@ class TestSkipGeneratePath(unittest.TestCase):
         self.assertGreaterEqual(len(df), 2)
         self.assertTrue((df["text"].astype(str).str.strip() == "").all())
         self.assertTrue((df["language"] == "en").all())
-
-
-if __name__ == "__main__":
-    unittest.main()

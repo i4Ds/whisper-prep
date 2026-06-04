@@ -39,7 +39,3 @@ class TestBasicTextFilters(unittest.TestCase):
                 drop_empty_text=False,
             )
             self.assertEqual(retained["text"].tolist(), df["text"].tolist())
-
-
-if __name__ == "__main__":
-    unittest.main()

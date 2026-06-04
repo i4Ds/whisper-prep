@@ -204,7 +204,3 @@ class TestFreesoundPipelineIntegration(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             if not audio_files:
                 raise FileNotFoundError(f"No audio files found in {args.free_sound_dir}")
-
-
-if __name__ == "__main__":
-    unittest.main()

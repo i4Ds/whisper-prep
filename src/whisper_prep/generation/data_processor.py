@@ -619,10 +619,14 @@ class DataProcessor:
                 prompt = self._get_prompt(prompt_buffer)
 
                 segment_utterances = []
+                next_segment_start = None
                 while (
                     idx < len(span_utterances)
                     and span_utterances[idx].start < segment_end
                 ):
+                    if span_utterances[idx].end > segment_end:
+                        next_segment_start = span_utterances[idx].start
+                        break
                     segment_utterances.append(span_utterances[idx])
                     idx += 1
 
@@ -642,21 +646,16 @@ class DataProcessor:
                     start_token = self._get_time_token(
                         utterance.start, segment_start, audio_path
                     )
-                    if utterance.end <= segment_end:
-                        end_token = self._get_time_token(
-                            utterance.end, segment_start, audio_path
-                        )
-                        utterance_text = self._add_leading_space(utterance.text)
-                        segment_text.extend([start_token, utterance_text, end_token])
-                        new_prompt_length = len(self.tokenizer.encode(utterance_text)) + 2
-                        new_prompt_node = PromptNode(
-                            start_token + utterance_text + end_token, new_prompt_length
-                        )
-                        tokens_length += new_prompt_length
-                    else:
-                        segment_text.append(start_token)
-                        new_prompt_node = PromptNode(start_token, 1)
-                        tokens_length += 1
+                    end_token = self._get_time_token(
+                        utterance.end, segment_start, audio_path
+                    )
+                    utterance_text = self._add_leading_space(utterance.text)
+                    segment_text.extend([start_token, utterance_text, end_token])
+                    new_prompt_length = len(self.tokenizer.encode(utterance_text)) + 2
+                    new_prompt_node = PromptNode(
+                        start_token + utterance_text + end_token, new_prompt_length
+                    )
+                    tokens_length += new_prompt_length
 
                     prompt_buffer.append(new_prompt_node)
 
@@ -669,8 +668,9 @@ class DataProcessor:
                 elif not segment_utterances and random.random() >= self.keep_empty_chance:
                     pass
                 else:
+                    audio_segment_end = next_segment_start or segment_end
                     segment_audio_path = self._save_segment_audio(
-                        audio, segment_start, segment_end, dump_dir
+                        audio, segment_start, audio_segment_end, dump_dir
                     )
                     record = Record(
                         audio_path=segment_audio_path,
@@ -680,15 +680,12 @@ class DataProcessor:
                     )
                     records.append(record)
 
-                if len(segment_utterances) == 0:
+                if next_segment_start is not None:
+                    segment_start = next_segment_start
+                elif len(segment_utterances) == 0:
                     segment_start += DURATION
-                elif segment_utterances[-1].end <= segment_end:
+                else:
                     segment_start = segment_utterances[-1].end
-                else:  # segment_utterances[-1].end > segment_end
-                    # The text of the last utterance was not included in the segment and will be
-                    # included in the next segment
-                    segment_start = segment_utterances[-1].start
-                    idx -= 1
 
             if segment_start < span_end:
                 records.extend(

@@ -112,7 +112,3 @@ class TestGenerate(unittest.TestCase):
         text = "Hallo [remove]ABC... Test z.B. 150 000 €"
         result = normalize_text(text)
         assert result == "Hallo ABC. Test zum Beispiel 150'000 Euro"
-
-
-if __name__ == "__main__":
-    unittest.main()

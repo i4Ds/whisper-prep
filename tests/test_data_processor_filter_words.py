@@ -1,4 +1,5 @@
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,6 +11,67 @@ from whisper_prep.generation.data_processor import DataProcessor, SAMPLE_RATE
 
 
 class TestDataProcessorFilterWords(unittest.TestCase):
+    def test_audio_cut_keeps_silence_until_next_utterance_start(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            audio_dir = root / "audio"
+            transcript_dir = root / "transcripts"
+            dump_dir = root / "dump"
+            output = root / "data.ljson"
+            audio_dir.mkdir()
+            transcript_dir.mkdir()
+
+            audio_path = audio_dir / "sample.wav"
+            audio = torch.zeros(1, SAMPLE_RATE * 40)
+            torchaudio.save(audio_path, audio, SAMPLE_RATE)
+
+            (transcript_dir / "sample.srt").write_text(
+                "\n".join(
+                    [
+                        "1",
+                        "00:00:00,000 --> 00:00:28,170",
+                        "Hello until just before the window end",
+                        "",
+                        "2",
+                        "00:00:28,190 --> 00:00:32,070",
+                        "Next speech belongs to the next segment",
+                        "",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            processor = DataProcessor(
+                audio_dir=audio_dir,
+                transcript_dir=transcript_dir,
+                output=output,
+                dump_dir=dump_dir,
+            )
+            processor.run()
+
+            records = [
+                json.loads(line)
+                for line in output.read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual(len(records), 2)
+            self.assertEqual(Path(records[0]["audio_path"]).name, "0.mp3")
+            self.assertEqual(Path(records[1]["audio_path"]).name, "28190.mp3")
+            self.assertIn("Hello until just before the window end", records[0]["text"])
+            self.assertNotIn("Next speech belongs", records[0]["text"])
+            self.assertIn("Next speech belongs", records[1]["text"])
+
+            segment_audio, sample_rate = torchaudio.load(records[0]["audio_path"])
+            duration_ms = round(segment_audio.size(1) * 1000 / sample_rate)
+
+            self.assertEqual(sample_rate, SAMPLE_RATE)
+            self.assertLessEqual(abs(duration_ms - 28190), 1)
+            max_timestamp_ms = max(
+                round(float(value) * 1000)
+                for value in re.findall(r"<\|([0-9]+\.[0-9]+)\|>", records[0]["text"])
+            )
+            self.assertLessEqual(max_timestamp_ms, duration_ms)
+
     def test_filter_words_cut_audio_and_text_from_folder_processing(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -140,7 +202,3 @@ class TestDataProcessorFilterWords(unittest.TestCase):
             }
             for blocked_start, _ in blocked_intervals:
                 self.assertNotIn(f"{blocked_start}.mp3", emitted_names)
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -132,6 +132,7 @@ dependencies = [
   "pysubs2",
   "torchcodec==0.10.0",
   "torch==2.10.0",
+  "pytest",
 ]
 
 # List additional groups of dependencies here (e.g. development

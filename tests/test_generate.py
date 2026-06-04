@@ -120,7 +120,3 @@ class TestGenerate(unittest.TestCase):
                 == 0
             )
             assert len(dataset[split]) > 0 # At least one sample
-
-
-if __name__ == "__main__":
-    unittest.main()
