@@ -668,7 +668,12 @@ class DataProcessor:
                 elif not segment_utterances and random.random() >= self.keep_empty_chance:
                     pass
                 else:
-                    audio_segment_end = next_segment_start or segment_end
+                    audio_segment_end = self._get_audio_segment_end(
+                        segment_utterances,
+                        segment_start,
+                        segment_end,
+                        next_segment_start,
+                    )
                     segment_audio_path = self._save_segment_audio(
                         audio, segment_start, audio_segment_end, dump_dir
                     )
@@ -755,6 +760,26 @@ class DataProcessor:
                 encoding="mp3",
             )
         return segment_audio_path
+
+    def _get_audio_segment_end(
+        self,
+        segment_utterances: List[Utterance],
+        segment_start: int,
+        segment_end: int,
+        next_segment_start: Optional[int],
+    ) -> int:
+        if next_segment_start is None:
+            return segment_end
+        if not segment_utterances:
+            return min(next_segment_start, segment_end)
+
+        rounded_utterance_end = max(
+            segment_start
+            + round((utterance.end - segment_start) / self.timestamp_resolution)
+            * self.timestamp_resolution
+            for utterance in segment_utterances
+        )
+        return min(max(next_segment_start, rounded_utterance_end), segment_end)
 
     @staticmethod
     def _merge_intervals(intervals: List[tuple]) -> List[tuple]:

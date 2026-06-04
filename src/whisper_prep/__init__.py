@@ -166,6 +166,7 @@ def main(config=None):
         filter_segment_words=filter_words,
         transcripts_tsv=transcripts_tsv,
         keep_empty_chance=keep_empty_chance,
+        subsampling_factor_for_silence=config.get("subsampling_factor_for_silence", 1),
         use_source_audio_for_empty_full_segments=config.get(
             "use_source_audio_for_empty_full_segments", False
         ),
