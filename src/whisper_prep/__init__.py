@@ -177,6 +177,8 @@ def main(config=None):
         transcripts_tsv=transcripts_tsv,
         keep_empty_chance=keep_empty_chance,
         subsampling_factor_for_silence=config.get("subsampling_factor_for_silence", 1),
+        validate_empty_with_vad=config.get("validate_empty_with_vad", False),
+        empty_vad_max_speech_ratio=config.get("empty_vad_max_speech_ratio", 0.06),
     )
     dp.run()
 

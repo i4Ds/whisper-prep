@@ -14,6 +14,7 @@ from tqdm import tqdm
 from whisper.audio import load_audio
 from whisper.tokenizer import LANGUAGES, TO_LANGUAGE_CODE, get_tokenizer
 from whisper.utils import format_timestamp
+from whisper_prep.audio.vad import silero_speech_ratio
 from whisper_prep.generation.typing import PromptNode, Record, Utterance
 import csv
 from collections import defaultdict
@@ -49,6 +50,8 @@ class DataProcessor:
         filter_segment_words: Optional[List[str]] = None,
         drop_text: Optional[List[str]] = None,
         transcripts_tsv: Optional[str] = None,
+        validate_empty_with_vad: bool = False,
+        empty_vad_max_speech_ratio: float = 0.06,
     ) -> None:
         self.with_timestamps = with_timestamps
         self.audio_dir = audio_dir
@@ -70,6 +73,8 @@ class DataProcessor:
         self.filter_segment_words = filter_segment_words
         self.drop_text = drop_text
         self.transcripts_tsv = transcripts_tsv
+        self.validate_empty_with_vad = validate_empty_with_vad
+        self.empty_vad_max_speech_ratio = empty_vad_max_speech_ratio
         self.filtered_segment_records: List[dict] = []
 
         self._verify_args()
@@ -112,6 +117,12 @@ class DataProcessor:
         if not 0 <= self.keep_empty_chance <= 1:
             raise ValueError(
                 f"keep_empty_chance must be between 0 and 1, got {self.keep_empty_chance}"
+            )
+
+        if not 0 <= self.empty_vad_max_speech_ratio <= 1:
+            raise ValueError(
+                "empty_vad_max_speech_ratio must be between 0 and 1, "
+                f"got {self.empty_vad_max_speech_ratio}"
             )
 
     def run(self) -> None:
@@ -744,6 +755,11 @@ class DataProcessor:
                     segment_audio_path = self._save_segment_audio(
                         audio, segment_start, audio_segment_end, dump_dir
                     )
+                    if (
+                        not segment_utterances
+                        and not self._empty_segment_passes_vad(segment_audio_path)
+                    ):
+                        continue
                     record = Record(
                         audio_path=segment_audio_path,
                         language=self.language,
@@ -786,6 +802,9 @@ class DataProcessor:
                 segment_audio_path = self._save_segment_audio(
                     audio, segment_start, segment_end, dump_dir
                 )
+                if not self._empty_segment_passes_vad(segment_audio_path):
+                    segment_start = segment_end
+                    continue
                 records.append(
                     Record(
                         audio_path=segment_audio_path,
@@ -796,6 +815,21 @@ class DataProcessor:
                 )
             segment_start = segment_end
         return records
+
+    def _empty_segment_passes_vad(self, segment_audio_path: str) -> bool:
+        if not self.validate_empty_with_vad:
+            return True
+
+        speech_ratio = silero_speech_ratio(segment_audio_path)
+        if speech_ratio <= self.empty_vad_max_speech_ratio:
+            return True
+
+        tqdm.write(
+            f"Skipping empty-text segment {segment_audio_path} because VAD found "
+            f"{speech_ratio:.2%} speech"
+        )
+        Path(segment_audio_path).unlink(missing_ok=True)
+        return False
 
     def _save_segment_audio(
         self, audio: torch.Tensor, segment_start: int, segment_end: int, dump_dir: Path
