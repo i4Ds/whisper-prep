@@ -1,3 +1,5 @@
+import csv
+import re
 from pathlib import Path
 
 import json
@@ -9,6 +11,7 @@ from whisper_prep.generation.data_processor import DataProcessor, SAMPLE_RATE
 
 
 ASSETS = Path("tests/assets/empty_vad")
+SRG_ASSETS = Path("tests/assets/srg_real")
 
 
 def test_silero_speech_ratio_separates_empty_text_examples():
@@ -94,3 +97,98 @@ def test_empty_segment_vad_advances_after_rejecting_speechy_gap(tmp_path):
     assert f"{gap_start_ms}.mp3" not in names
     assert not (tmp_path / "dump" / "sample" / f"{gap_start_ms}.mp3").exists()
     assert any("After" in record["text"] for record in records)
+
+
+def test_long_real_silence_is_split_and_kept_with_empty_vad(tmp_path):
+    audio_dir = tmp_path / "audio"
+    transcript_dir = tmp_path / "transcripts"
+    audio_dir.mkdir()
+    transcript_dir.mkdir()
+
+    audio_path = audio_dir / "sample.wav"
+    audio = torch.zeros(1, SAMPLE_RATE * 75)
+    torchaudio.save(audio_path, audio, SAMPLE_RATE)
+    (transcript_dir / "sample.srt").write_text("", encoding="utf-8")
+
+    processor = DataProcessor(
+        audio_dir=str(audio_dir),
+        transcript_dir=str(transcript_dir),
+        output=str(tmp_path / "data.ljson"),
+        dump_dir=str(tmp_path / "dump"),
+        keep_empty_chance=1.0,
+        validate_empty_with_vad=True,
+        empty_vad_max_speech_ratio=0.06,
+    )
+    processor.run()
+
+    records = [
+        json.loads(line)
+        for line in (tmp_path / "data.ljson").read_text(encoding="utf-8").splitlines()
+    ]
+    names = [Path(record["audio_path"]).name for record in records]
+
+    assert names == ["0.mp3", "30000.mp3", "60000.mp3"]
+    assert all(record["text"] == "" for record in records)
+    assert all(Path(record["audio_path"]).exists() for record in records)
+
+
+def test_real_srg_slice_drops_punctuation_hallucination_and_keeps_timestamps(tmp_path):
+    audio_path = SRG_ASSETS / "srg_punctuation_hallucination_slice.mp3"
+    srt_path = SRG_ASSETS / "srg_punctuation_hallucination_slice.srt"
+    tsv_path = tmp_path / "transcripts.tsv"
+    with tsv_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=["id", "audio_path", "srt_path", "language"],
+            delimiter="\t",
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "id": "srg_real",
+                "audio_path": str(audio_path),
+                "srt_path": str(srt_path),
+                "language": "fr",
+            }
+        )
+
+    processor = DataProcessor(
+        audio_dir="",
+        transcript_dir="",
+        output=str(tmp_path / "data.ljson"),
+        dump_dir=str(tmp_path / "dump"),
+        transcripts_tsv=str(tsv_path),
+        cut_initial_audio=True,
+        keep_empty_chance=1.0,
+        validate_empty_with_vad=True,
+        empty_vad_max_speech_ratio=0.06,
+    )
+    processor.run()
+
+    records = [
+        json.loads(line)
+        for line in (tmp_path / "data.ljson").read_text(encoding="utf-8").splitlines()
+    ]
+    names = [Path(record["audio_path"]).name for record in records]
+    combined_text = "\n".join(record["text"] for record in records)
+
+    assert records
+    assert any("musique acophonique" in record["text"] for record in records)
+    assert "............" not in combined_text
+    assert ".............................." not in combined_text
+    assert all(not re.fullmatch(r"(?:<\|[0-9.]+\|>|\s|\.)+", record["text"]) for record in records)
+
+    for record in records:
+        audio, sample_rate = torchaudio.load(record["audio_path"])
+        duration_ms = round(audio.size(1) * 1000 / sample_rate)
+        timestamps = [
+            round(float(value) * 1000)
+            for value in re.findall(r"<\|([0-9]+\.[0-9]+)\|>", record["text"])
+        ]
+        assert all(0 <= timestamp <= duration_ms for timestamp in timestamps)
+
+    report = tmp_path / "filtered_punctuation_hallucination_examples.csv"
+    assert report.exists()
+    report_text = report.read_text(encoding="utf-8")
+    assert "............" in report_text
+    assert "punctuation_hallucination" in report_text

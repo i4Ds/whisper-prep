@@ -222,6 +222,33 @@ class DataProcessor:
 
         return sanitized_utterances
 
+    @staticmethod
+    def _is_punctuation_hallucination(text: str) -> bool:
+        compact = re.sub(r"\s+", "", text or "")
+        if len(compact) < 3:
+            return False
+        has_word_character = re.search(r"\w", compact, flags=re.UNICODE)
+        return has_word_character is None
+
+    def _drop_punctuation_hallucinations_with_records(
+        self, utterances: List[Utterance]
+    ) -> tuple[List[Utterance], List[dict]]:
+        kept = []
+        dropped_records = []
+        for utterance in utterances:
+            if self._is_punctuation_hallucination(utterance.text):
+                dropped_records.append(
+                    {
+                        "start_ms": utterance.start,
+                        "end_ms": utterance.end,
+                        "text": utterance.text,
+                        "matched_word": "punctuation_hallucination",
+                    }
+                )
+            else:
+                kept.append(utterance)
+        return kept, dropped_records
+
     def _sanitize_utterances(
         self,
         utterances: List[Utterance],
@@ -238,6 +265,20 @@ class DataProcessor:
         )
         if filtered_out is not None:
             for record in dropped_repeats:
+                filtered_out.append(
+                    {
+                        "speech_id": source_id
+                        or (Path(transcript_path).stem if transcript_path else ""),
+                        "transcript_path": str(transcript_path or ""),
+                        **record,
+                    }
+                )
+
+        utterances, dropped_punctuation = (
+            self._drop_punctuation_hallucinations_with_records(utterances)
+        )
+        if filtered_out is not None:
+            for record in dropped_punctuation:
                 filtered_out.append(
                     {
                         "speech_id": source_id
@@ -920,6 +961,8 @@ class DataProcessor:
             if utterance.start < segment_start:
                 return False
             if utterance.start > utterance.end:
+                return False
+            if self._is_punctuation_hallucination(utterance.text):
                 return False
 
         # Check the utterances do not overlap
