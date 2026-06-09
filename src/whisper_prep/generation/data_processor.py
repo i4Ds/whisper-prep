@@ -755,18 +755,18 @@ class DataProcessor:
                     segment_audio_path = self._save_segment_audio(
                         audio, segment_start, audio_segment_end, dump_dir
                     )
-                    if (
+                    empty_segment_failed_vad = (
                         not segment_utterances
                         and not self._empty_segment_passes_vad(segment_audio_path)
-                    ):
-                        continue
-                    record = Record(
-                        audio_path=segment_audio_path,
-                        language=self.language,
-                        text="".join(segment_text),
-                        prompt=prompt,
                     )
-                    records.append(record)
+                    if not empty_segment_failed_vad:
+                        record = Record(
+                            audio_path=segment_audio_path,
+                            language=self.language,
+                            text="".join(segment_text),
+                            prompt=prompt,
+                        )
+                        records.append(record)
 
                 if next_segment_start is not None:
                     segment_start = next_segment_start
