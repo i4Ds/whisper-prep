@@ -1,4 +1,4 @@
-"""Tests for ensure_extracted and use_source_audio_for_empty_full_segments."""
+"""Tests for ensure_extracted and empty transcript segmentation."""
 
 from __future__ import annotations
 
@@ -112,11 +112,11 @@ class TestEnsureExtracted:
 
 
 # ---------------------------------------------------------------------------
-# Tests: use_source_audio_for_empty_full_segments (TSV path)
+# Tests: empty transcript segmentation (TSV path)
 # ---------------------------------------------------------------------------
 
-class TestUseSourceAudioForEmptyFullSegments:
-    """Verify the optimisation that reuses the original clip path for short empty clips."""
+class TestEmptyTranscriptSegments:
+    """Verify empty transcript clips are written through the normal segment path."""
 
     def setup_method(self):
         self.tmp = Path(tempfile.mkdtemp())
@@ -124,7 +124,7 @@ class TestUseSourceAudioForEmptyFullSegments:
     def teardown_method(self):
         shutil.rmtree(self.tmp)
 
-    def _run_dp(self, audio_path: Path, dur_s: float, use_source: bool) -> list[dict]:
+    def _run_dp(self, audio_path: Path, dur_s: float) -> list[dict]:
         """Run DataProcessor in TSV mode with one clip, return parsed records."""
         import json
         from whisper_prep.generation.data_processor import DataProcessor
@@ -158,7 +158,6 @@ class TestUseSourceAudioForEmptyFullSegments:
             dump_dir=str(dump),
             transcripts_tsv=str(tsv_path),
             keep_empty_chance=1.0,
-            use_source_audio_for_empty_full_segments=use_source,
         )
         dp.run()
 
@@ -168,40 +167,29 @@ class TestUseSourceAudioForEmptyFullSegments:
                 records.append(json.loads(line))
         return records
 
-    def test_source_path_reused_when_flag_true_and_clip_short(self):
-        """Short clip (≤30 s) + empty SRT + flag=True → record points to original file."""
+    def test_short_empty_clip_creates_dump_segment(self):
+        """Short clip with an empty SRT creates a normal dumped segment."""
         audio = self.tmp / "short_clip.wav"
         _make_silent_wav(audio, dur_s=5.0)
 
-        records = self._run_dp(audio, dur_s=5.0, use_source=True)
+        records = self._run_dp(audio, dur_s=5.0)
 
         assert len(records) == 1
-        assert records[0]["audio_path"] == str(audio.absolute())
-        assert records[0]["text"] == ""
-
-    def test_new_segment_created_when_flag_false(self):
-        """With flag=False a new segment file is always created in dump/."""
-        audio = self.tmp / "short_clip2.wav"
-        _make_silent_wav(audio, dur_s=5.0)
-
-        records = self._run_dp(audio, dur_s=5.0, use_source=False)
-
-        assert len(records) >= 1
-        # With flag off, the path should point inside dump/, not to the original
         assert records[0]["audio_path"] != str(audio.absolute())
         assert Path(records[0]["audio_path"]).exists()
+        assert records[0]["text"] == ""
 
-    def test_source_not_reused_when_clip_longer_than_30s(self):
-        """Clips longer than 30 s must always be split, not reused directly."""
+    def test_long_empty_clip_is_split_into_dump_segments(self):
+        """Clips longer than 30 s are split and never point back to the source."""
         audio = self.tmp / "long_clip.wav"
         _make_silent_wav(audio, dur_s=35.0)
 
-        records = self._run_dp(audio, dur_s=35.0, use_source=True)
+        records = self._run_dp(audio, dur_s=35.0)
 
-        # Should produce ≥2 segments, none pointing to the original file
         assert len(records) >= 2
         for r in records:
             assert r["audio_path"] != str(audio.absolute())
+            assert Path(r["audio_path"]).exists()
 
 
 # ---------------------------------------------------------------------------

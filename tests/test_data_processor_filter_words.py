@@ -135,6 +135,143 @@ class TestDataProcessorFilterWords(unittest.TestCase):
             self.assertEqual(round(second_audio.size(1) * 1000 / second_rate), 5000)
             self.assertFalse((dump_dir / "sample" / "10000.mp3").exists())
 
+    def test_repeated_hallucination_blocks_audio_not_empty_text(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            audio_dir = root / "audio"
+            transcript_dir = root / "transcripts"
+            dump_dir = root / "dump"
+            output = root / "data.ljson"
+            audio_dir.mkdir()
+            transcript_dir.mkdir()
+
+            audio_path = audio_dir / "sample.wav"
+            audio = torch.zeros(1, SAMPLE_RATE * 70)
+            torchaudio.save(audio_path, audio, SAMPLE_RATE)
+
+            (transcript_dir / "sample.srt").write_text(
+                "\n".join(
+                    [
+                        "1",
+                        "00:00:00,000 --> 00:00:01,000",
+                        "Real speech before",
+                        "",
+                        "2",
+                        "00:00:10,000 --> 00:00:12,000",
+                        "Repeated credit",
+                        "",
+                        "3",
+                        "00:00:12,000 --> 00:00:20,000",
+                        "Repeated credit",
+                        "",
+                        "4",
+                        "00:00:20,000 --> 00:00:30,000",
+                        "Repeated credit",
+                        "",
+                        "5",
+                        "00:00:45,000 --> 00:00:46,000",
+                        "Real speech after",
+                        "",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            processor = DataProcessor(
+                audio_dir=audio_dir,
+                transcript_dir=transcript_dir,
+                output=output,
+                dump_dir=dump_dir,
+                keep_empty_chance=1.0,
+            )
+            processor.run()
+
+            records = [
+                json.loads(line)
+                for line in output.read_text(encoding="utf-8").splitlines()
+            ]
+            names = [Path(record["audio_path"]).name for record in records]
+
+            self.assertIn("0.mp3", names)
+            self.assertIn("1000.mp3", names)  # true silence before hallucination
+            self.assertIn("30000.mp3", names)
+            self.assertNotIn("10000.mp3", names)
+            self.assertTrue(
+                all("Repeated credit" not in record["text"] for record in records)
+            )
+
+            hallucination_report = root / "filtered_repeated_hallucination_examples.csv"
+            self.assertTrue(hallucination_report.exists())
+            self.assertIn(
+                "Repeated credit",
+                hallucination_report.read_text(encoding="utf-8"),
+            )
+
+    def test_drop_text_keeps_audio_but_hard_filter_drops_segment_audio(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            audio_dir = root / "audio"
+            transcript_dir = root / "transcripts"
+            dump_dir = root / "dump"
+            output = root / "data.ljson"
+            audio_dir.mkdir()
+            transcript_dir.mkdir()
+
+            audio_path = audio_dir / "sample.wav"
+            audio = torch.zeros(1, SAMPLE_RATE * 18)
+            torchaudio.save(audio_path, audio, SAMPLE_RATE)
+
+            (transcript_dir / "sample.srt").write_text(
+                "\n".join(
+                    [
+                        "1",
+                        "00:00:00,000 --> 00:00:06,000",
+                        "Live-Untertitel Willkommen zum Film",
+                        "",
+                        "2",
+                        "00:00:06,000 --> 00:00:12,000",
+                        "SECRET pii should not survive",
+                        "",
+                        "3",
+                        "00:00:12,000 --> 00:00:18,000",
+                        "Danach geht es weiter",
+                        "",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            processor = DataProcessor(
+                audio_dir=audio_dir,
+                transcript_dir=transcript_dir,
+                output=output,
+                dump_dir=dump_dir,
+                filter_segment_words=["SECRET"],
+                drop_text=["Live-Untertitel"],
+            )
+            processor.run()
+
+            records = [
+                json.loads(line)
+                for line in output.read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual(len(records), 2)
+            self.assertIn("Willkommen zum Film", records[0]["text"])
+            self.assertNotIn("Live-Untertitel", records[0]["text"])
+            self.assertTrue(all("SECRET" not in record["text"] for record in records))
+            self.assertEqual(
+                [Path(record["audio_path"]).name for record in records],
+                ["0.mp3", "12000.mp3"],
+            )
+
+            first_audio, first_rate = torchaudio.load(records[0]["audio_path"])
+            second_audio, second_rate = torchaudio.load(records[1]["audio_path"])
+            self.assertEqual(round(first_audio.size(1) * 1000 / first_rate), 6000)
+            self.assertEqual(round(second_audio.size(1) * 1000 / second_rate), 6000)
+            self.assertFalse((dump_dir / "sample" / "6000.mp3").exists())
+
     def test_filter_words_cut_real_fixture_audio_lengths_and_json_output(self):
         fixture_id = "filter_words_fixture"
         fixture_dir = Path("tests/assets/filter_words")

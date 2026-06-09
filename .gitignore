@@ -165,3 +165,6 @@ tests/assets/out/
 out/*
 *.yaml
 .vscode/*
+analysis/*
+bad_examples.csv
+*.srt

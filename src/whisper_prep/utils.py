@@ -123,10 +123,12 @@ def fuse_until_limits(
     max_chars: int = NETFLIX_CHAR,
     max_duration: float = NETFLIX_DUR,
     skip_words: list = None,
+    drop_text: list = None,
 ) -> bool:
     """Rewrite *subs* in‑place, merging cues while combined cue stays <= limits.
     
     Cues containing any word in skip_words will not be merged with others.
+    Phrases in drop_text are removed from cue text before merging.
 
     Returns True if *subs* was modified.
     """
@@ -134,6 +136,22 @@ def fuse_until_limits(
         return False
     
     skip_words = skip_words or []
+    drop_text = drop_text or []
+
+    def remove_drop_text(text: str) -> str:
+        for fragment in drop_text:
+            if fragment:
+                text = re.sub(re.escape(fragment), "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s+([,.;:!?])", r"\1", text)
+        text = re.sub(r"\s{2,}", " ", text)
+        return text.strip()
+
+    text_changed = False
+    for cue in subs:
+        cleaned_text = remove_drop_text(cue.text)
+        if cleaned_text != cue.text:
+            text_changed = True
+        cue.text = cleaned_text
 
     def contains_skip_word(text: str) -> bool:
         return any(word.lower() in text.lower() for word in skip_words)
@@ -167,7 +185,7 @@ def fuse_until_limits(
     merged.append(current)
 
     # Detect change by comparing lengths or any differing fields
-    changed = len(merged) != len(subs) or any(
+    changed = text_changed or len(merged) != len(subs) or any(
         m.start != s.start or m.end != s.end or m.text != s.text
         for m, s in zip(merged, subs)
     )
@@ -178,23 +196,33 @@ def fuse_until_limits(
     return changed
 
 
-def netflix_normalize_file(path: str, skip_words: list = None) -> None:
+def netflix_normalize_file(
+    path: str, skip_words: list = None, drop_text: list = None
+) -> None:
     """Normalize SRT file using Netflix-style limits.
     
     Args:
         path: Path to the SRT file
         skip_words: List of words - cues containing these will not be merged
+        drop_text: List of phrases to remove from cue text before merging
     """
-    subs = pysubs2.load(path)
-    if fuse_until_limits(subs, skip_words=skip_words):
+    try:
+        subs = pysubs2.load(path)
+    except Exception as exc:
+        print(f"Skipping Netflix normalization for {path}: {exc}")
+        return
+
+    if fuse_until_limits(subs, skip_words=skip_words, drop_text=drop_text):
         subs.save(path, format_="srt")  # overwrite in place
         print(f"Updated {(path)}")
 
 
-def netflix_normalize_all_srts_in_folder(folder: str = ".", skip_words: list = None) -> None:
+def netflix_normalize_all_srts_in_folder(
+    folder: str = ".", skip_words: list = None, drop_text: list = None
+) -> None:
     """One-liner helper: normalize all .srt files in *folder*."""
     for file in glob(os.path.join(folder, "*.srt")):
-        netflix_normalize_file(file, skip_words=skip_words)
+        netflix_normalize_file(file, skip_words=skip_words, drop_text=drop_text)
 
 
 def save_hu_dataset_locally(config, audio_dir, transcript_dir):

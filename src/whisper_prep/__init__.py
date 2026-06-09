@@ -140,8 +140,11 @@ def main(config=None):
         process_audio_dir = audio_dir
         process_transcript_dir = transcript_dir
 
-    # Get filter_words for Netflix normalization and DataProcessor
-    filter_words = config.get("filter_words", [])
+    # Text-only removals keep the audio/segment; hard drops remove audio spans.
+    drop_text = config.get("drop_text", [])
+    drop_segments_containing = config.get(
+        "drop_segments_containing", config.get("filter_words", [])
+    )
     
     # Step 3: Netflix-style SRT normalization (optional)
     if config.get("netflix_normalize", False):
@@ -149,10 +152,16 @@ def main(config=None):
             with open(transcripts_tsv, encoding="utf-8") as tsvfile:
                 reader = csv.DictReader(tsvfile, delimiter="\t")
                 for row in reader:
-                    netflix_normalize_file(row["srt_path"], skip_words=filter_words)
+                    netflix_normalize_file(
+                        row["srt_path"],
+                        skip_words=drop_segments_containing,
+                        drop_text=drop_text,
+                    )
         else:
             netflix_normalize_all_srts_in_folder(
-                process_transcript_dir, skip_words=filter_words
+                process_transcript_dir,
+                skip_words=drop_segments_containing,
+                drop_text=drop_text,
             )
     
     # Step 4: segment & timestamp via DataProcessor
@@ -163,13 +172,11 @@ def main(config=None):
         output=output_file,
         dump_dir=dump_dir,
         cut_initial_audio=config.get("cut_initial_audio", False),
-        filter_segment_words=filter_words,
+        filter_segment_words=drop_segments_containing,
+        drop_text=drop_text,
         transcripts_tsv=transcripts_tsv,
         keep_empty_chance=keep_empty_chance,
         subsampling_factor_for_silence=config.get("subsampling_factor_for_silence", 1),
-        use_source_audio_for_empty_full_segments=config.get(
-            "use_source_audio_for_empty_full_segments", False
-        ),
     )
     dp.run()
 
@@ -207,8 +214,8 @@ def main(config=None):
             df_dataframe = df_dataframe[~english_idx]
 
     # Filter out chunks with certain words if specified
-    if "filter_words" in config:
-        for word in config["filter_words"]:
+    if drop_segments_containing:
+        for word in drop_segments_containing:
             word_idx = df_dataframe["text"].str.contains(
                 word, case=False, regex=False, na=False
             )
@@ -220,9 +227,9 @@ def main(config=None):
                 df_dataframe = df_dataframe[~word_idx]
 
     # Hard safety check: no filtered words should remain in final data.
-    if "filter_words" in config:
+    if drop_segments_containing:
         residual_idx = None
-        for word in config["filter_words"]:
+        for word in drop_segments_containing:
             word_idx = df_dataframe["text"].str.contains(
                 word, case=False, regex=False, na=False
             )
