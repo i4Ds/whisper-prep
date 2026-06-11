@@ -1,8 +1,11 @@
 """Tests for Netflix-style SRT normalization."""
 
+import tempfile
 import unittest
+from pathlib import Path
+
 import pysubs2
-from whisper_prep.utils import fuse_until_limits
+from whisper_prep.utils import fuse_until_limits, netflix_normalize_file
 
 
 class TestFuseUntilLimits(unittest.TestCase):
@@ -124,6 +127,29 @@ class TestFuseUntilLimits(unittest.TestCase):
         self.assertFalse(changed, "Should not fuse due to case-insensitive PII match")
         self.assertEqual(len(subs), 3, "Should have 3 segments")
 
+    def test_drop_text_removes_phrase_without_skip_word_behavior(self):
+        """Text-only drops should clean cue text while allowing normal fusion."""
+        subs = pysubs2.SSAFile()
+        subs.append(
+            pysubs2.SSAEvent(
+                start=1000,
+                end=2000,
+                text="Live-Untertitel Hallo",
+            )
+        )
+        subs.append(pysubs2.SSAEvent(start=2000, end=3000, text="Welt"))
+
+        changed = fuse_until_limits(
+            subs,
+            max_chars=42,
+            max_duration=7,
+            drop_text=["Live-Untertitel"],
+        )
+
+        self.assertTrue(changed)
+        self.assertEqual(len(subs), 1)
+        self.assertEqual(subs[0].text, "Hallo Welt")
+
     def test_empty_subs(self):
         """Test with empty subtitle file."""
         subs = pysubs2.SSAFile()
@@ -143,6 +169,12 @@ class TestFuseUntilLimits(unittest.TestCase):
         self.assertFalse(changed, "Should not change single segment")
         self.assertEqual(len(subs), 1)
 
+    def test_netflix_normalize_skips_unreadable_srt(self):
+        """Bad SRT files should not abort a long batch run."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "bad.srt"
+            path.write_text("not a subtitle file\n", encoding="utf-8")
 
-if __name__ == "__main__":
-    unittest.main()
+            netflix_normalize_file(str(path), drop_text=["subtitle"])
+
+            self.assertEqual(path.read_text(encoding="utf-8"), "not a subtitle file\n")

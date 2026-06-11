@@ -132,6 +132,7 @@ dependencies = [
   "pysubs2",
   "torchcodec==0.10.0",
   "torch==2.10.0",
+  "pytest",
 ]
 
 # List additional groups of dependencies here (e.g. development
@@ -166,3 +167,4 @@ test = ["coverage"]
 # which executes the function `main` from this package when invoked.
 [project.scripts]
 whisper_prep = "whisper_prep:main"
+whisper_prep_download_hf = "whisper_prep.download_hf_dataset:main"

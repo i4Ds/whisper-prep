@@ -56,8 +56,9 @@ def combine_tsvs_to_dataframe(
         if partial < 1.0:
             data = data.sample(frac=partial)
 
+        data["sentence"] = data["sentence"].fillna("") if "sentence" in data.columns else ""
         for row in tqdm(pd.DataFrame.itertuples(data), total=len(data)):
-            sentence = row.sentence
+            sentence = row.sentence if pd.notna(row.sentence) else ""
             sample_path = row.path if hasattr(row, "path") else row.clip_path
             audio_file_path = Path(clips_folder, sample_path)
 

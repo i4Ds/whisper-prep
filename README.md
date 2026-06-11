@@ -125,15 +125,36 @@ Use this with the `transcripts_tsv` config option.
 Place audio files in one folder and matching SRT/VTT files in another folder (with the same stem name). The tool will automatically match them.
 
 #### Option D: HuggingFace Datasets
-Specify dataset identifiers via `hu_datasets`. Supports:
+Download remote datasets first with `whisper_prep_download_hf`, then run the
+normal local sentence-fusion or SRT-splitting config.
+
+Remote datasets can be:
 - Datasets with `audio` and `srt` columns (processed directly)
 - Datasets with `audio` and `sentence`/`text` columns (generates synthetic SRTs)
+
+Use `--format` to force the remote mode:
+- `auto`: use `srt` when present, otherwise sentence/text TSV fusion
+- `srt`: require an `srt` column and process downloaded SRTs directly
+- `sentences`: save sentence/text entries to a local TSV, fuse them into SRTs, then segment
+
+```bash
+whisper_prep_download_hf \
+  --dataset username/dataset \
+  --output-dir data/downloaded/my_dataset/train \
+  --split train \
+  --format auto
+```
+
+If the download produced `transcripts_mapping.tsv`, use it as `transcripts_tsv`.
+If it produced `hf_sentences.tsv`, use it as `tsv_paths` with
+`clips_folders: ["data/downloaded/my_dataset/train/audios"]`.
 
 ---
 
 ### Configuration File (.yaml)
 
-Set up a `.yaml` configuration file. See `example.yaml` for a complete example.
+Set up a `.yaml` configuration file. See `config_sentence_fusion.yaml` and
+`config_srt_splitting.yaml` for complete examples.
 
 #### Basic Configuration
 ```yaml
@@ -143,12 +164,24 @@ split_name: train
 language: de
 out_folder_base: /path/to/output
 
-# Data Sources (choose one or more)
-tsv_paths: ["data/sentences.tsv"]           # Sentence-level TSV files
-clips_folders: ["data/clips"]               # Folders containing audio clips
-partials: [1.0]                             # Proportion of each dataset to use
-transcripts_tsv: "data/transcripts.tsv"     # TSV mapping SRTs to audio files
-hu_datasets: ["username/dataset"]           # HuggingFace dataset identifiers
+# Data source: choose exactly one route.
+
+# Route 1: sentence-level TSVs, fused into SRTs first
+tsv_paths: ["data/sentences.tsv"]
+clips_folders: ["data/clips"]
+partials: [1.0]
+transcripts_tsv: null
+
+# Route 2: explicit SRT/audio mapping
+# transcripts_tsv: "data/transcripts.tsv"
+# tsv_paths: null
+# clips_folders: null
+# partials: null
+
+# Route 3: matched local folders
+# transcripts_tsv: null
+# source_audio_dir: "data/audio"
+# source_transcript_dir: "data/subtitles"
 ```
 
 #### Generation Options (for sentence concatenation)
@@ -156,11 +189,13 @@ hu_datasets: ["username/dataset"]           # HuggingFace dataset identifiers
 maintain_speaker_chance: 0.5   # Probability of keeping same speaker
 n_samples_per_srt: 16          # Number of sentences per generated SRT
 normalize_text: true           # Apply text normalization rules
+vad_chance: 1.0                # Probability of applying VAD to each sentence clip
+keep_empty_chance: 0.0         # Probability of keeping empty/no-speech samples
 
 # Audio overlap settings (for realistic speech)
 overlap_chance: 0.5            # Probability of overlap between clips
-max_overlap_chance: 0.2        # Probability of maximum overlap
-max_overlap_duration: 0.2      # Max overlap duration in seconds
+max_overlap_chance: 0.2        # Probability of using the largest allowed overlap
+max_overlap_duration: 0.2      # Max speech overlap beyond detected non-speech
 ```
 
 #### Processing Options
@@ -170,6 +205,7 @@ cut_initial_audio: true        # Trim audio to 1 second before first subtitle
 filter_french: true            # Remove French language samples
 filter_english: false          # Remove English language samples
 filter_words: ["[MUSIC]", "[NOISE]"]  # Remove samples containing these words
+keep_empty_chance: 0.0         # Also controls silence retention after SRT segmentation
 ```
 
 #### HuggingFace Upload
@@ -267,11 +303,11 @@ Timestamps are quantized to 20ms resolution (Whisper's native resolution).
 
 ## Working Examples
 
-The `examples/` folder contains two complete configuration examples for the two main use cases.
+The repo contains two complete configuration examples for the two main use cases.
 
 ### Example 1: Fusing Sentences into Long-Form Audio
 
-**File:** `examples/config_sentence_fusion.yaml`
+**File:** `config_sentence_fusion.yaml`
 
 Use this when you have **short sentence-level audio clips** (like Common Voice) and want to combine them into longer, more realistic training data.
 
@@ -293,7 +329,7 @@ Output: 1 long audio file (30-60s) + matched SRT with timestamps
 **Quick Start:**
 ```bash
 # Edit the configuration
-cp examples/config_sentence_fusion.yaml my_config.yaml
+cp config_sentence_fusion.yaml my_config.yaml
 # Update: tsv_paths, clips_folders, dataset_name
 
 # Run
@@ -312,7 +348,7 @@ clips/ghi789.mp3       in the green forest               speaker_002
 
 ### Example 2: Splitting Long-Form Audio with Existing SRTs
 
-**File:** `examples/config_srt_splitting.yaml`
+**File:** `config_srt_splitting.yaml`
 
 Use this when you have **long-form audio with existing SRT/VTT subtitles** (like movies, podcasts, audiobooks) and want to segment them into Whisper-compatible chunks.
 
@@ -338,7 +374,7 @@ Output: 240 × 30-second segments with timestamp tokens
 **Quick Start:**
 ```bash
 # Edit the configuration
-cp examples/config_srt_splitting.yaml my_config.yaml
+cp config_srt_splitting.yaml my_config.yaml
 # Update: transcripts_tsv, dataset_name, filter_words
 
 # Run

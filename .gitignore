@@ -164,3 +164,9 @@ notebooks/
 tests/assets/out/
 out/*
 *.yaml
+.vscode/*
+analysis/*
+bad_examples.csv
+*.srt
+!tests/assets/punctuation_hallucination/punctuation_hallucination_slice.srt
+scripts/*

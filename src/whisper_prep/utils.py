@@ -1,8 +1,10 @@
 import argparse
+import csv
 import os
 import re
 import zlib
 from glob import glob
+from dataclasses import dataclass
 from pathlib import Path
 
 import pysubs2
@@ -12,6 +14,12 @@ from tqdm.auto import tqdm
 
 NETFLIX_CHAR = 42
 NETFLIX_DUR = 7
+
+
+@dataclass
+class DownloadedDatasetPaths:
+    sentence_tsvs: list[str]
+    transcripts_tsv: str | None = None
 
 
 def parse_args() -> argparse.Namespace:
@@ -115,10 +123,12 @@ def fuse_until_limits(
     max_chars: int = NETFLIX_CHAR,
     max_duration: float = NETFLIX_DUR,
     skip_words: list = None,
+    drop_text: list = None,
 ) -> bool:
     """Rewrite *subs* in‑place, merging cues while combined cue stays <= limits.
     
     Cues containing any word in skip_words will not be merged with others.
+    Phrases in drop_text are removed from cue text before merging.
 
     Returns True if *subs* was modified.
     """
@@ -126,6 +136,22 @@ def fuse_until_limits(
         return False
     
     skip_words = skip_words or []
+    drop_text = drop_text or []
+
+    def remove_drop_text(text: str) -> str:
+        for fragment in drop_text:
+            if fragment:
+                text = re.sub(re.escape(fragment), "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s+([,.;:!?])", r"\1", text)
+        text = re.sub(r"\s{2,}", " ", text)
+        return text.strip()
+
+    text_changed = False
+    for cue in subs:
+        cleaned_text = remove_drop_text(cue.text)
+        if cleaned_text != cue.text:
+            text_changed = True
+        cue.text = cleaned_text
 
     def contains_skip_word(text: str) -> bool:
         return any(word.lower() in text.lower() for word in skip_words)
@@ -159,7 +185,7 @@ def fuse_until_limits(
     merged.append(current)
 
     # Detect change by comparing lengths or any differing fields
-    changed = len(merged) != len(subs) or any(
+    changed = text_changed or len(merged) != len(subs) or any(
         m.start != s.start or m.end != s.end or m.text != s.text
         for m, s in zip(merged, subs)
     )
@@ -170,31 +196,47 @@ def fuse_until_limits(
     return changed
 
 
-def netflix_normalize_file(path: str, skip_words: list = None) -> None:
+def netflix_normalize_file(
+    path: str, skip_words: list = None, drop_text: list = None
+) -> None:
     """Normalize SRT file using Netflix-style limits.
     
     Args:
         path: Path to the SRT file
         skip_words: List of words - cues containing these will not be merged
+        drop_text: List of phrases to remove from cue text before merging
     """
-    subs = pysubs2.load(path)
-    if fuse_until_limits(subs, skip_words=skip_words):
+    try:
+        subs = pysubs2.load(path)
+    except Exception as exc:
+        print(f"Skipping Netflix normalization for {path}: {exc}")
+        return
+
+    if fuse_until_limits(subs, skip_words=skip_words, drop_text=drop_text):
         subs.save(path, format_="srt")  # overwrite in place
         print(f"Updated {(path)}")
 
 
-def netflix_normalize_all_srts_in_folder(folder: str = ".", skip_words: list = None) -> None:
+def netflix_normalize_all_srts_in_folder(
+    folder: str = ".", skip_words: list = None, drop_text: list = None
+) -> None:
     """One-liner helper: normalize all .srt files in *folder*."""
     for file in glob(os.path.join(folder, "*.srt")):
-        netflix_normalize_file(file, skip_words=skip_words)
+        netflix_normalize_file(file, skip_words=skip_words, drop_text=drop_text)
 
 
 def save_hu_dataset_locally(config, audio_dir, transcript_dir):
     """Save HuggingFace dataset examples locally as audio and SRT or collect sentences.
-    Returns list of TSV paths for sentence-based entries.
+    Returns local TSV metadata paths.
     """
     split_name = config.get("hu_input_split", config["split_name"])
     out_folder = config["out_folder"]
+    input_format = config.get("hf_input_format", "auto")
+    if input_format not in {"auto", "srt", "sentences"}:
+        raise ValueError(
+            "hf_input_format must be one of 'auto', 'srt', or 'sentences', "
+            f"got {input_format!r}"
+        )
 
     hu_names = config["hu_datasets"]
 
@@ -220,6 +262,7 @@ def save_hu_dataset_locally(config, audio_dir, transcript_dir):
         ds = ds.filter(lambda example: str(example["id"]) in allowed_ids)
 
     sentence_entries = []
+    srt_entries = []
     for idx, example in tqdm(
         enumerate(ds), total=len(ds), desc=f"Saving examples to {audio_dir}"
     ):
@@ -255,10 +298,24 @@ def save_hu_dataset_locally(config, audio_dir, transcript_dir):
         sf.write(str(dest), audio_array, int(sampling_rate), format="WAV")
 
         srt_text = example.get("srt")
-        if srt_text is not None:
+        use_srt = input_format != "sentences" and srt_text is not None
+        if input_format == "srt" and srt_text is None:
+            raise ValueError(
+                "hf_input_format is 'srt', but at least one dataset entry has no 'srt' column/value"
+            )
+
+        if use_srt:
             srt_file = transcript_dir / f"{dest.stem}.srt"
             with open(srt_file, "w", encoding="utf-8") as f:
                 f.write(srt_text)
+            srt_entries.append(
+                {
+                    "srt_path": str(srt_file),
+                    "audio_path": str(dest),
+                    "language": example.get("language", config.get("language", "")),
+                    "id": dest.stem,
+                }
+            )
         else:
             text = example.get("sentence") or example.get("text")
             if text is None:
@@ -269,10 +326,8 @@ def save_hu_dataset_locally(config, audio_dir, transcript_dir):
             sentence_entries.append(
                 {"path": dest.name, "sentence": text, "client_id": client_id}
             )
-    tsv_paths = []
+    sentence_tsvs = []
     if sentence_entries:
-        import csv
-
         tsv_file = Path(out_folder, "hf_sentences.tsv")
         with open(tsv_file, "w", encoding="utf-8", newline="") as f:
             writer = csv.DictWriter(
@@ -280,8 +335,20 @@ def save_hu_dataset_locally(config, audio_dir, transcript_dir):
             )
             writer.writeheader()
             writer.writerows(sentence_entries)
-        tsv_paths.append(str(tsv_file))
-    return tsv_paths
+        sentence_tsvs.append(str(tsv_file))
+    transcripts_tsv = None
+    if srt_entries:
+        tsv_file = Path(out_folder, "transcripts_mapping.tsv")
+        with open(tsv_file, "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(
+                f,
+                delimiter="\t",
+                fieldnames=["srt_path", "audio_path", "language", "id"],
+            )
+            writer.writeheader()
+            writer.writerows(srt_entries)
+        transcripts_tsv = str(tsv_file)
+    return DownloadedDatasetPaths(sentence_tsvs, transcripts_tsv)
 
 
 if __name__ == "__main__":

@@ -131,3 +131,33 @@ def silero_vad_collector(
     end_second = speech_timestamps[-1]["end"]
 
     return start_second, end_second
+
+
+def silero_speech_ratio(
+    path: str,
+    threshold: float = 0.5,
+    min_speech_duration_ms: int = 250,
+    min_silence_duration_ms: int = 100,
+    window_size_samples: int = 1024,
+    speech_pad_ms: int = 30,
+) -> float:
+    audio = read_audio(path)
+    if len(audio) == 0:
+        return 0.0
+
+    speech_timestamps = get_speech_timestamps(
+        audio,
+        SILERO_MODEL,
+        threshold=threshold,
+        min_speech_duration_ms=min_speech_duration_ms,
+        min_silence_duration_ms=min_silence_duration_ms,
+        window_size_samples=window_size_samples,
+        speech_pad_ms=speech_pad_ms,
+        return_seconds=False,
+    )
+
+    speech_samples = sum(
+        max(0, timestamp["end"] - timestamp["start"])
+        for timestamp in speech_timestamps
+    )
+    return speech_samples / len(audio)

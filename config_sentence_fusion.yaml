@@ -23,9 +23,19 @@ clips_folders:
   - "./data/audio_clips"
 partials: [1.0]  # Use all data (0.5 = 50%, 0.1 = 10%)
 
-# Leave these null when using sentence-level TSV
-hu_datasets: null
+# Leave this null when using sentence-level TSV
 transcripts_tsv: null
+
+# To download a remote Hugging Face sentence dataset first:
+# python download_hf_dataset.py \
+#   --dataset username/dataset \
+#   --output-dir ./data/downloaded/my_dataset/train \
+#   --split train \
+#   --format sentences
+#
+# Then set:
+# tsv_paths: ["./data/downloaded/my_dataset/train/hf_sentences.tsv"]
+# clips_folders: ["./data/downloaded/my_dataset/train/audios"]
 
 # ============================================================================
 # SENTENCE FUSION CONFIGURATION
@@ -37,6 +47,9 @@ transcripts_tsv: null
 maintain_speaker_chance: 0.6
 
 # Number of sentences to combine into each SRT file
+# Sentence fusion intentionally creates SRT/audio pairs that can be longer than
+# Whisper's 30-second training window. The normal SRT segmentation step runs
+# afterwards and cuts these fused files into <=30s Whisper samples.
 # Typical durations:
 #   - 8 samples: ~30 seconds
 #   - 16 samples: ~60 seconds
@@ -45,6 +58,17 @@ n_samples_per_srt: 16
 
 # Apply text normalization (removes URLs, extra spaces, etc.)
 normalize_text: true
+
+# Probability (0-1) of applying VAD to each input sentence clip.
+# 1.0 = always trim/position by detected speech, 0.5 = only half the clips,
+# 0.0 = use each full clip duration without VAD.
+vad_chance: 1.0
+
+# Probability (0-1) of keeping empty/no-speech data. During sentence fusion this
+# keeps clips with empty text or clips where VAD detects no speech. During the
+# 30-second SRT segmentation step this keeps silence/no-text segments and lets
+# those empty records survive final filtering.
+keep_empty_chance: 0.0
 
 # ============================================================================
 # AUDIO OVERLAP CONFIGURATION
@@ -56,12 +80,14 @@ normalize_text: true
 # Overlap only occurs in non-speech segments detected by Voice Activity Detection (VAD)
 overlap_chance: 0.4
 
-# Probability (0-1) of maximum overlap when an overlap occurs
-# If triggered: non-speech is removed → back-to-back speech
-# If not triggered: random amount of non-speech kept between utterances
+# Probability (0-1) of using the largest allowed overlap when overlap_chance
+# triggers. If triggered, the detected non-speech gap is removed and up to
+# max_overlap_duration seconds of speech can overlap. If not triggered, the
+# overlap amount is sampled randomly up to that same limit.
 max_overlap_chance: 0.2
 
-# Maximum duration (in seconds) of overlap between utterances
+# Maximum intentional speech overlap (in seconds) beyond the detected
+# non-speech gap between utterances.
 max_overlap_duration: 0.5
 
 # ============================================================================
