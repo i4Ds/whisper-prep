@@ -11,7 +11,7 @@ from whisper_prep.generation.data_processor import DataProcessor, SAMPLE_RATE
 
 
 ASSETS = Path("tests/assets/empty_vad")
-SRG_ASSETS = Path("tests/assets/srg_real")
+PUNCTUATION_HALLUCINATION_ASSETS = Path("tests/assets/punctuation_hallucination")
 
 
 def test_silero_speech_ratio_separates_empty_text_examples():
@@ -132,9 +132,9 @@ def test_long_real_silence_is_split_and_kept_with_empty_vad(tmp_path):
     assert all(Path(record["audio_path"]).exists() for record in records)
 
 
-def test_real_srg_slice_drops_punctuation_hallucination_and_keeps_timestamps(tmp_path):
-    audio_path = SRG_ASSETS / "srg_punctuation_hallucination_slice.mp3"
-    srt_path = SRG_ASSETS / "srg_punctuation_hallucination_slice.srt"
+def test_real_slice_drops_punctuation_hallucination_and_keeps_timestamps(tmp_path):
+    audio_path = PUNCTUATION_HALLUCINATION_ASSETS / "punctuation_hallucination_slice.mp3"
+    srt_path = PUNCTUATION_HALLUCINATION_ASSETS / "punctuation_hallucination_slice.srt"
     tsv_path = tmp_path / "transcripts.tsv"
     with tsv_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
@@ -145,7 +145,7 @@ def test_real_srg_slice_drops_punctuation_hallucination_and_keeps_timestamps(tmp
         writer.writeheader()
         writer.writerow(
             {
-                "id": "srg_real",
+                "id": "punctuation_hallucination_real",
                 "audio_path": str(audio_path),
                 "srt_path": str(srt_path),
                 "language": "fr",
