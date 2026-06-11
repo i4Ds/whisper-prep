@@ -168,3 +168,4 @@ out/*
 analysis/*
 bad_examples.csv
 *.srt
+scripts/*
