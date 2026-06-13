@@ -1,5 +1,8 @@
 from pathlib import Path
 import yaml
+from multiprocessing import Pool
+import os
+import time
 
 # Package API definitions
 from whisper_prep.generation.data_processor import DataProcessor
@@ -14,6 +17,21 @@ from whisper_prep.utils import (
 )
 from whisper_prep.dataset.convert import ljson_to_pandas, pandas_to_hf_dataset
 import csv
+
+
+def _netflix_normalize_tsv_row(args):
+    row, skip_words, drop_text = args
+    netflix_normalize_file(
+        row["srt_path"],
+        skip_words=skip_words,
+        drop_text=drop_text,
+    )
+
+
+def _move_stale_dir(path: Path) -> None:
+    stale_path = path.with_name(f"{path.name}.stale.{int(time.time())}.{os.getpid()}")
+    path.rename(stale_path)
+    print(f"Moved stale output directory {path} to {stale_path}")
 
 
 def _as_path_or_none(value):
@@ -124,6 +142,18 @@ def main(config=None):
     output_dir = Path(out_folder, "created_dataset")
     output_file = Path(output_dir, "data.ljson")
     dump_dir = Path(output_dir, "dump")
+    if config.get("overwrite_output", False):
+        for path in [
+            output_dir,
+            Path(out_folder, "hf"),
+            Path(out_folder, "bad_examples.csv"),
+            Path(out_folder, "french_examples.csv"),
+            Path(out_folder, "english_examples.csv"),
+        ]:
+            if path.is_dir():
+                _move_stale_dir(path)
+            elif path.exists():
+                path.unlink()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     (
@@ -150,8 +180,23 @@ def main(config=None):
     if config.get("netflix_normalize", False):
         if transcripts_tsv:
             with open(transcripts_tsv, encoding="utf-8") as tsvfile:
-                reader = csv.DictReader(tsvfile, delimiter="\t")
-                for row in reader:
+                rows = list(csv.DictReader(tsvfile, delimiter="\t"))
+            n_jobs = min(
+                config.get("netflix_normalize_n_jobs", config.get("transcripts_tsv_n_jobs", 1)),
+                len(rows),
+            )
+            if n_jobs > 1:
+                print(f"Netflix-normalizing TSV transcripts with {n_jobs} workers")
+                with Pool(processes=n_jobs) as pool:
+                    pool.map(
+                        _netflix_normalize_tsv_row,
+                        [
+                            (row, drop_segments_containing, drop_text)
+                            for row in rows
+                        ],
+                    )
+            else:
+                for row in rows:
                     netflix_normalize_file(
                         row["srt_path"],
                         skip_words=drop_segments_containing,
@@ -179,6 +224,7 @@ def main(config=None):
         subsampling_factor_for_silence=config.get("subsampling_factor_for_silence", 1),
         validate_empty_with_vad=config.get("validate_empty_with_vad", False),
         empty_vad_max_speech_ratio=config.get("empty_vad_max_speech_ratio", 0.06),
+        n_jobs=config.get("transcripts_tsv_n_jobs", config.get("n_jobs", 1)),
     )
     dp.run()
 

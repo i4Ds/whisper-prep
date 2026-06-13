@@ -1,10 +1,12 @@
 import html
 import json
+import os
 import random
 import re
 import unicodedata
 import warnings
 from collections import deque
+from multiprocessing import Pool
 from pathlib import Path
 from typing import Deque, List, Optional, Union
 
@@ -22,6 +24,38 @@ from collections import defaultdict
 DURATION = 30000  # 30 seconds in milliseconds
 SAMPLE_RATE = 16000
 DURATION_IN_SAMPLES = int(DURATION * SAMPLE_RATE / 1000)
+_WORKER_PROCESSOR = None
+_WORKER_OUTPUT = None
+
+
+def _init_transcripts_worker(processor_kwargs: dict, output_dir: str) -> None:
+    global _WORKER_PROCESSOR, _WORKER_OUTPUT
+    torch.set_num_threads(1)
+    worker_output = Path(output_dir, f"data.worker.{os.getpid()}.ljson")
+    worker_output.unlink(missing_ok=True)
+    worker_kwargs = dict(processor_kwargs)
+    worker_kwargs["output"] = str(worker_output)
+    _WORKER_OUTPUT = worker_output
+    _WORKER_PROCESSOR = DataProcessor(**worker_kwargs)
+
+
+def _process_transcripts_tsv_row(row: dict) -> dict:
+    if _WORKER_PROCESSOR is None or _WORKER_OUTPUT is None:
+        raise RuntimeError("Transcript worker was not initialized")
+
+    before_size = _WORKER_OUTPUT.stat().st_size if _WORKER_OUTPUT.exists() else 0
+    filtered_records, error = _WORKER_PROCESSOR._process_transcripts_tsv_row(row)
+    records_written = 0
+    if _WORKER_OUTPUT.exists():
+        with _WORKER_OUTPUT.open(encoding="utf-8") as f:
+            f.seek(before_size)
+            records_written = sum(1 for _ in f)
+
+    return {
+        "records_written": records_written,
+        "filtered_records": filtered_records,
+        "error": error,
+    }
 
 
 class DataProcessor:
@@ -52,6 +86,7 @@ class DataProcessor:
         transcripts_tsv: Optional[str] = None,
         validate_empty_with_vad: bool = False,
         empty_vad_max_speech_ratio: float = 0.06,
+        n_jobs: int = 1,
     ) -> None:
         self.with_timestamps = with_timestamps
         self.audio_dir = audio_dir
@@ -75,6 +110,7 @@ class DataProcessor:
         self.transcripts_tsv = transcripts_tsv
         self.validate_empty_with_vad = validate_empty_with_vad
         self.empty_vad_max_speech_ratio = empty_vad_max_speech_ratio
+        self.n_jobs = n_jobs
         self.filtered_segment_records: List[dict] = []
 
         self._verify_args()
@@ -124,6 +160,9 @@ class DataProcessor:
                 "empty_vad_max_speech_ratio must be between 0 and 1, "
                 f"got {self.empty_vad_max_speech_ratio}"
             )
+
+        if self.n_jobs < 1:
+            raise ValueError(f"n_jobs must be at least 1, got {self.n_jobs}")
 
     def run(self) -> None:
         if self.with_timestamps:
@@ -333,68 +372,10 @@ class DataProcessor:
 
     def _process_with_timestamps(self) -> None:
         if self.transcripts_tsv:
-            with open(self.transcripts_tsv, encoding="utf-8") as tsvfile:
-                # Pre-count rows so tqdm can display ETA and progress percentage.
-                total_rows = max(0, sum(1 for _ in tsvfile) - 1)
-                tsvfile.seek(0)
-                reader = csv.DictReader(tsvfile, delimiter="\t")
-                for row in tqdm(
-                    reader,
-                    total=total_rows,
-                    desc="Processing TSV transcripts",
-                ):
-                    srt_path = Path(row["srt_path"])
-                    audio_path = Path(row["audio_path"])
-                    speech_id = row.get("id") or audio_path.stem
-                    orig_lang = self.language
-                    self.language = row.get("language") or self.language
-                    filtered_for_speech: List[dict] = []
-                    try:
-                        if srt_path.suffix == ".srt":
-                            utterances = self.read_utterances_from_srt(
-                                srt_path,
-                                self.normalize_unicode,
-                                self.filter_segment_words,
-                                self.drop_text,
-                                filtered_for_speech,
-                                speech_id,
-                            )
-                        elif srt_path.suffix == ".vtt":
-                            utterances = self.read_utterances_from_vtt(
-                                srt_path,
-                                self.normalize_unicode,
-                                self.filter_segment_words,
-                                self.drop_text,
-                                filtered_for_speech,
-                                speech_id,
-                            )
-                        else:
-                            raise ValueError(
-                                f"Unsupported transcript format: {srt_path.suffix}"
-                            )
-                        if not self._is_valid_utterances(utterances, 0):
-                            utterances = self._sanitize_utterances(
-                                utterances,
-                                filtered_for_speech,
-                                speech_id,
-                                srt_path,
-                            )
-                        blocked_intervals = [
-                            (r["start_ms"], r["end_ms"]) for r in filtered_for_speech
-                        ]
-                        self.filtered_segment_records.extend(filtered_for_speech)
-                        records = self._create_records_with_timestamps(
-                            utterances,
-                            audio_path,
-                            speech_id,
-                            blocked_intervals=blocked_intervals,
-                        )
-                        self.write_records(records, self.output)
-                    except Exception as e:
-                        print(e)
-                        print(f"Skipping {srt_path} due to an error in the transcript")
-                    finally:
-                        self.language = orig_lang
+            if self.n_jobs > 1:
+                self._process_transcripts_tsv_parallel()
+                return
+            self._process_transcripts_tsv_sequential()
             return
         audio_paths = list(Path(self.audio_dir).iterdir())
 
@@ -458,6 +439,186 @@ class DataProcessor:
 
             if not transcript_found:
                 raise FileNotFoundError(f"Transcript file not found for {speech_id}")
+
+    def _process_transcripts_tsv_sequential(self) -> None:
+        if self.transcripts_tsv:
+            with open(self.transcripts_tsv, encoding="utf-8") as tsvfile:
+                # Pre-count rows so tqdm can display ETA and progress percentage.
+                total_rows = max(0, sum(1 for _ in tsvfile) - 1)
+                tsvfile.seek(0)
+                reader = csv.DictReader(tsvfile, delimiter="\t")
+                for row in tqdm(
+                    reader,
+                    total=total_rows,
+                    desc="Processing TSV transcripts",
+                ):
+                    srt_path = Path(row["srt_path"])
+                    audio_path = Path(row["audio_path"])
+                    speech_id = row.get("id") or audio_path.stem
+                    orig_lang = self.language
+                    self.language = row.get("language") or self.language
+                    filtered_for_speech: List[dict] = []
+                    try:
+                        if srt_path.suffix == ".srt":
+                            utterances = self.read_utterances_from_srt(
+                                srt_path,
+                                self.normalize_unicode,
+                                self.filter_segment_words,
+                                self.drop_text,
+                                filtered_for_speech,
+                                speech_id,
+                            )
+                        elif srt_path.suffix == ".vtt":
+                            utterances = self.read_utterances_from_vtt(
+                                srt_path,
+                                self.normalize_unicode,
+                                self.filter_segment_words,
+                                self.drop_text,
+                                filtered_for_speech,
+                                speech_id,
+                            )
+                        else:
+                            raise ValueError(
+                                f"Unsupported transcript format: {srt_path.suffix}"
+                            )
+                        if not self._is_valid_utterances(utterances, 0):
+                            utterances = self._sanitize_utterances(
+                                utterances,
+                                filtered_for_speech,
+                                speech_id,
+                                srt_path,
+                            )
+                        blocked_intervals = [
+                            (r["start_ms"], r["end_ms"]) for r in filtered_for_speech
+                        ]
+                        self.filtered_segment_records.extend(filtered_for_speech)
+                        records = self._create_records_with_timestamps(
+                            utterances,
+                            audio_path,
+                            speech_id,
+                            blocked_intervals=blocked_intervals,
+                        )
+                        self.write_records(records, self.output)
+                    except Exception as e:
+                        print(e)
+                        print(f"Skipping {srt_path} due to an error in the transcript")
+                    finally:
+                        self.language = orig_lang
+            return
+
+    def _process_transcripts_tsv_parallel(self) -> None:
+        if not self.transcripts_tsv:
+            return
+
+        with open(self.transcripts_tsv, encoding="utf-8") as tsvfile:
+            rows = list(csv.DictReader(tsvfile, delimiter="\t"))
+
+        parts_dir = Path(self.output).parent / "_parts"
+        parts_dir.mkdir(parents=True, exist_ok=True)
+        for part_path in parts_dir.glob("data.worker.*.ljson"):
+            part_path.unlink()
+
+        processor_kwargs = {
+            "audio_dir": self.audio_dir,
+            "transcript_dir": self.transcript_dir,
+            "with_timestamps": self.with_timestamps,
+            "data_file": self.data_file,
+            "transcript_formats": self.transcript_formats,
+            "language": self.language,
+            "dump_dir": self.dump_dir,
+            "timestamp_resolution": self.timestamp_resolution,
+            "max_prompt_length": self.max_prompt_length,
+            "max_tokens_length": self.max_tokens_length,
+            "subsampling_factor_for_silence": 1,
+            "keep_empty_chance": self.keep_empty_chance,
+            "rep_threshold": self.rep_threshold,
+            "tokenizer_type": self.tokenizer_type,
+            "normalize_unicode": self.normalize_unicode,
+            "cut_initial_audio": self.cut_initial_audio,
+            "filter_segment_words": self.filter_segment_words,
+            "drop_text": self.drop_text,
+            "transcripts_tsv": self.transcripts_tsv,
+            "validate_empty_with_vad": self.validate_empty_with_vad,
+            "empty_vad_max_speech_ratio": self.empty_vad_max_speech_ratio,
+            "n_jobs": 1,
+        }
+        worker_count = min(self.n_jobs, len(rows))
+        print(f"Processing TSV transcripts with {worker_count} workers")
+
+        with Pool(
+            processes=worker_count,
+            initializer=_init_transcripts_worker,
+            initargs=(processor_kwargs, str(parts_dir)),
+        ) as pool:
+            for result in tqdm(
+                pool.imap_unordered(_process_transcripts_tsv_row, rows),
+                total=len(rows),
+                desc="Processing TSV transcripts",
+            ):
+                self.filtered_segment_records.extend(result["filtered_records"])
+                if result["error"]:
+                    print(result["error"])
+
+        Path(self.output).unlink(missing_ok=True)
+        with open(self.output, "w", encoding="utf-8") as outfile:
+            for part_path in sorted(parts_dir.glob("data.worker.*.ljson")):
+                with part_path.open(encoding="utf-8") as infile:
+                    for line in infile:
+                        outfile.write(line)
+
+    def _process_transcripts_tsv_row(self, row: dict) -> tuple[List[dict], Optional[str]]:
+        srt_path = Path(row["srt_path"])
+        audio_path = Path(row["audio_path"])
+        speech_id = row.get("id") or audio_path.stem
+        orig_lang = self.language
+        self.language = row.get("language") or self.language
+        filtered_for_speech: List[dict] = []
+        try:
+            if srt_path.suffix == ".srt":
+                utterances = self.read_utterances_from_srt(
+                    srt_path,
+                    self.normalize_unicode,
+                    self.filter_segment_words,
+                    self.drop_text,
+                    filtered_for_speech,
+                    speech_id,
+                )
+            elif srt_path.suffix == ".vtt":
+                utterances = self.read_utterances_from_vtt(
+                    srt_path,
+                    self.normalize_unicode,
+                    self.filter_segment_words,
+                    self.drop_text,
+                    filtered_for_speech,
+                    speech_id,
+                )
+            else:
+                raise ValueError(f"Unsupported transcript format: {srt_path.suffix}")
+            if not self._is_valid_utterances(utterances, 0):
+                utterances = self._sanitize_utterances(
+                    utterances,
+                    filtered_for_speech,
+                    speech_id,
+                    srt_path,
+                )
+            blocked_intervals = [
+                (r["start_ms"], r["end_ms"]) for r in filtered_for_speech
+            ]
+            records = self._create_records_with_timestamps(
+                utterances,
+                audio_path,
+                speech_id,
+                blocked_intervals=blocked_intervals,
+            )
+            self.write_records(records, self.output)
+            return filtered_for_speech, None
+        except Exception as e:
+            return (
+                filtered_for_speech,
+                f"{e}\nSkipping {srt_path} due to an error in the transcript",
+            )
+        finally:
+            self.language = orig_lang
 
     @staticmethod
     def read_utterances_from_srt(
