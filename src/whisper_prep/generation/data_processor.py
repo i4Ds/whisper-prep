@@ -58,6 +58,13 @@ def _process_transcripts_tsv_row(row: dict) -> dict:
     }
 
 
+def _process_audio_path_worker(audio_path_str: str) -> dict:
+    """Pool worker for the folder-based (SRT-on-disk) timestamping path."""
+    if _WORKER_PROCESSOR is None or _WORKER_OUTPUT is None:
+        raise RuntimeError("Folder worker was not initialized")
+    return _WORKER_PROCESSOR._process_one_audio(Path(audio_path_str))
+
+
 class DataProcessor:
     def __init__(
         self,
@@ -379,66 +386,147 @@ class DataProcessor:
             return
         audio_paths = list(Path(self.audio_dir).iterdir())
 
+        # Cutting each generated audio + its SRT into <=30s records is fully
+        # independent per file, so parallelize it when n_jobs > 1.
+        if self.n_jobs > 1 and len(audio_paths) > 1:
+            self._process_folder_parallel(audio_paths)
+            return
+
         for audio_path in tqdm(audio_paths):
-            speech_id = audio_path.stem
-            transcript_found = False
+            result = self._process_one_audio(audio_path)
+            self.filtered_segment_records.extend(result["filtered_records"])
+            if result["error"]:
+                print(result["error"])
 
-            for format in self.transcript_formats:
-                transcript_path = Path(self.transcript_dir) / format.format(
-                    id=speech_id
+    def _process_one_audio(self, audio_path: Path) -> dict:
+        """Process a single generated audio file and its transcript.
+
+        Reads the matching SRT/VTT, creates timestamped records and appends
+        them to ``self.output``. Returns the filtered-segment records plus an
+        optional error string (instead of raising) so it is safe to call from
+        a multiprocessing pool worker.
+        """
+        speech_id = audio_path.stem
+
+        for fmt in self.transcript_formats:
+            transcript_path = Path(self.transcript_dir) / fmt.format(id=speech_id)
+            if not transcript_path.exists():
+                continue
+            try:
+                filtered_for_speech: List[dict] = []
+                if transcript_path.suffix == ".srt":
+                    utterances_for_speech = self.read_utterances_from_srt(
+                        transcript_path,
+                        self.normalize_unicode,
+                        self.filter_segment_words,
+                        self.drop_text,
+                        filtered_for_speech,
+                        speech_id,
+                    )
+                elif transcript_path.suffix == ".vtt":
+                    utterances_for_speech = self.read_utterances_from_vtt(
+                        transcript_path,
+                        self.normalize_unicode,
+                        self.filter_segment_words,
+                        self.drop_text,
+                        filtered_for_speech,
+                        speech_id,
+                    )
+                else:
+                    continue
+                # Sanitize utterances, if necessary. Takes care of some random
+                # timestamp errors produced by the VAD of whisperx.
+                if not self._is_valid_utterances(utterances_for_speech, 0):
+                    utterances_for_speech = self._sanitize_utterances(
+                        utterances_for_speech,
+                        filtered_for_speech,
+                        speech_id,
+                        transcript_path,
+                    )
+                blocked_intervals = [
+                    (r["start_ms"], r["end_ms"]) for r in filtered_for_speech
+                ]
+                records = self._create_records_with_timestamps(
+                    utterances_for_speech,
+                    audio_path,
+                    speech_id,
+                    blocked_intervals=blocked_intervals,
                 )
-                if transcript_path.exists():
-                    try:
-                        filtered_for_speech: List[dict] = []
-                        if transcript_path.suffix == ".srt":
-                            utterances_for_speech = self.read_utterances_from_srt(
-                                transcript_path,
-                                self.normalize_unicode,
-                                self.filter_segment_words,
-                                self.drop_text,
-                                filtered_for_speech,
-                                speech_id,
-                            )
-                        elif transcript_path.suffix == ".vtt":
-                            utterances_for_speech = self.read_utterances_from_vtt(
-                                transcript_path,
-                                self.normalize_unicode,
-                                self.filter_segment_words,
-                                self.drop_text,
-                                filtered_for_speech,
-                                speech_id,
-                            )
-                        # Sanitize utterances, if necessary.
-                        # Takes care of some random timestamps error produces by the VAD of whisperx.
-                        if not self._is_valid_utterances(utterances_for_speech, 0):
-                            utterances_for_speech = self._sanitize_utterances(
-                                utterances_for_speech,
-                                filtered_for_speech,
-                                speech_id,
-                                transcript_path,
-                            )
-                        blocked_intervals = [
-                            (r["start_ms"], r["end_ms"]) for r in filtered_for_speech
-                        ]
-                        self.filtered_segment_records.extend(filtered_for_speech)
-                        records = self._create_records_with_timestamps(
-                            utterances_for_speech,
-                            audio_path,
-                            speech_id,
-                            blocked_intervals=blocked_intervals,
-                        )
-                        self.write_records(records, self.output)
-                        transcript_found = True
-                        break
-                    except Exception as e:
-                        print(e)
-                        print(
-                            f"Skipping {transcript_path} due to an error in the transcript"
-                        )
-                        continue
+                self.write_records(records, self.output)
+                return {"filtered_records": filtered_for_speech, "error": None}
+            except Exception as e:
+                return {
+                    "filtered_records": [],
+                    "error": (
+                        f"Skipping {transcript_path} due to an error in the "
+                        f"transcript: {e}"
+                    ),
+                }
 
-            if not transcript_found:
-                raise FileNotFoundError(f"Transcript file not found for {speech_id}")
+        return {
+            "filtered_records": [],
+            "error": f"Transcript file not found for {speech_id}",
+        }
+
+    def _process_folder_parallel(self, audio_paths: List[Path]) -> None:
+        """Parallel version of the folder-based timestamping path.
+
+        Mirrors :meth:`_process_transcripts_tsv_parallel`: each worker owns its
+        own output shard, then the shards are concatenated into ``self.output``.
+        """
+        parts_dir = Path(self.output).parent / "_parts"
+        parts_dir.mkdir(parents=True, exist_ok=True)
+        for part_path in parts_dir.glob("data.worker.*.ljson"):
+            part_path.unlink()
+
+        processor_kwargs = {
+            "audio_dir": self.audio_dir,
+            "transcript_dir": self.transcript_dir,
+            "with_timestamps": self.with_timestamps,
+            "data_file": self.data_file,
+            "transcript_formats": self.transcript_formats,
+            "language": self.language,
+            "dump_dir": self.dump_dir,
+            "timestamp_resolution": self.timestamp_resolution,
+            "max_prompt_length": self.max_prompt_length,
+            "max_tokens_length": self.max_tokens_length,
+            "subsampling_factor_for_silence": 1,
+            "keep_empty_chance": self.keep_empty_chance,
+            "rep_threshold": self.rep_threshold,
+            "tokenizer_type": self.tokenizer_type,
+            "normalize_unicode": self.normalize_unicode,
+            "cut_initial_audio": self.cut_initial_audio,
+            "filter_segment_words": self.filter_segment_words,
+            "drop_text": self.drop_text,
+            "transcripts_tsv": None,
+            "validate_empty_with_vad": self.validate_empty_with_vad,
+            "empty_vad_max_speech_ratio": self.empty_vad_max_speech_ratio,
+            "n_jobs": 1,
+        }
+        worker_count = min(self.n_jobs, len(audio_paths))
+        print(f"Cutting {len(audio_paths)} SRTs into segments with {worker_count} workers")
+
+        audio_path_strs = [str(p) for p in audio_paths]
+        with Pool(
+            processes=worker_count,
+            initializer=_init_transcripts_worker,
+            initargs=(processor_kwargs, str(parts_dir)),
+        ) as pool:
+            for result in tqdm(
+                pool.imap_unordered(_process_audio_path_worker, audio_path_strs),
+                total=len(audio_path_strs),
+                desc="Cutting SRTs into segments",
+            ):
+                self.filtered_segment_records.extend(result["filtered_records"])
+                if result["error"]:
+                    print(result["error"])
+
+        Path(self.output).unlink(missing_ok=True)
+        with open(self.output, "w", encoding="utf-8") as outfile:
+            for part_path in sorted(parts_dir.glob("data.worker.*.ljson")):
+                with part_path.open(encoding="utf-8") as infile:
+                    for line in infile:
+                        outfile.write(line)
 
     def _process_transcripts_tsv_sequential(self) -> None:
         if self.transcripts_tsv:
