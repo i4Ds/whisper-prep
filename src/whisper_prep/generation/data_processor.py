@@ -722,7 +722,10 @@ class DataProcessor:
             lines = f.readlines()
             timestamps_indices = [i for i, line in enumerate(lines) if " --> " in line]
             timestamps_indices.append(
-                len(lines) + 1
+                # +2 so the final cue's text slice reaches the end of the file. With +1
+                # the last line is cut, which silently drops the last subtitle whenever
+                # the file does not end with a blank line.
+                len(lines) + 2
             )  # a dummy index to make the loop below simple
 
             for i in range(len(timestamps_indices) - 1):
@@ -796,7 +799,10 @@ class DataProcessor:
             lines = f.readlines()
             timestamps_indices = [i for i, line in enumerate(lines) if " --> " in line]
             timestamps_indices.append(
-                len(lines) + 1
+                # +2 so the final cue's text slice reaches the end of the file. With +1
+                # the last line is cut, which silently drops the last subtitle whenever
+                # the file does not end with a blank line.
+                len(lines) + 2
             )  # a dummy index to make the loop below simple
 
             for i in range(len(timestamps_indices) - 1):
@@ -980,6 +986,12 @@ class DataProcessor:
                     span_utterances[idx].start < segment_end
                     and span_utterances[idx].start + DURATION < span_utterances[idx].end
                 ):
+                    # The skipped utterance breaks the continuity of the transcript, so
+                    # the buffered prompt must not be carried into the following
+                    # segments -- the paper conditions on "the transcript text preceding
+                    # the current audio segment". The invalid-utterance skip path below
+                    # already clears it.
+                    prompt_buffer.clear()
                     segment_start = span_utterances[idx].end
                     idx += 1
                     continue
@@ -1257,7 +1269,19 @@ class DataProcessor:
             raise ValueError(
                 f"Invalid time format: {s}. Must be in the format of 00:00:00,000 or 00:00:00.000"
             )
-        hours, minutes, seconds = time.split(":")
+        parts = time.split(":")
+        if len(parts) == 3:
+            hours, minutes, seconds = parts
+        elif len(parts) == 2:
+            # WebVTT allows the hours field to be omitted, and Whisper's own WriteVTT
+            # emits MM:SS.mmm for anything under an hour (format_timestamp defaults to
+            # always_include_hours=False). Accept both.
+            hours, (minutes, seconds) = 0, parts
+        else:
+            raise ValueError(
+                f"Invalid time format: {s}. Must be HH:MM:SS or MM:SS, "
+                "separated from the milliseconds by ',' or '.'"
+            )
         hours = int(hours)
         minutes = int(minutes)
         seconds = int(seconds)
