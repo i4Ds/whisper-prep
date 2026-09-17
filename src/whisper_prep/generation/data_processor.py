@@ -1027,6 +1027,21 @@ class DataProcessor:
 
                     prompt_buffer.append(new_prompt_node)
 
+                # An utterance that straddles the window edge contributes only its
+                # start timestamp, with no text and no end timestamp. Whisper uses
+                # this dangling token to decide where the next 30 s window begins
+                # (paper section 2.3: "For segments that are only partially included
+                # in the current 30-second window, we predict only their start time
+                # token ... to indicate that the subsequent decoding should be
+                # performed on an audio window aligned with that time").
+                if next_segment_start is not None:
+                    dangling_token = self._get_time_token(
+                        next_segment_start, segment_start, audio_path
+                    )
+                    segment_text.append(dangling_token)
+                    prompt_buffer.append(PromptNode(dangling_token, 1))
+                    tokens_length += 1
+
                 if tokens_length > self.max_tokens_length:
                     tqdm.write(
                         f"Skipping {audio_path} ({format_timestamp(segment_start / 1000)}-"
@@ -1036,14 +1051,11 @@ class DataProcessor:
                 elif not segment_utterances and random.random() >= self.keep_empty_chance:
                     pass
                 else:
-                    audio_segment_end = self._get_audio_segment_end(
-                        segment_utterances,
-                        segment_start,
-                        segment_end,
-                        next_segment_start,
-                    )
+                    # Always store the full window. Truncating at the last
+                    # complete utterance made every training sample end in silence,
+                    # which is not what the model sees at inference time.
                     segment_audio_path = self._save_segment_audio(
-                        audio, segment_start, audio_segment_end, dump_dir
+                        audio, segment_start, segment_end, dump_dir
                     )
                     empty_segment_failed_vad = (
                         not segment_utterances
@@ -1143,26 +1155,6 @@ class DataProcessor:
                 encoding="mp3",
             )
         return segment_audio_path
-
-    def _get_audio_segment_end(
-        self,
-        segment_utterances: List[Utterance],
-        segment_start: int,
-        segment_end: int,
-        next_segment_start: Optional[int],
-    ) -> int:
-        if next_segment_start is None:
-            return segment_end
-        if not segment_utterances:
-            return min(next_segment_start, segment_end)
-
-        rounded_utterance_end = max(
-            segment_start
-            + round((utterance.end - segment_start) / self.timestamp_resolution)
-            * self.timestamp_resolution
-            for utterance in segment_utterances
-        )
-        return min(max(next_segment_start, rounded_utterance_end), segment_end)
 
     @staticmethod
     def _merge_intervals(intervals: List[tuple]) -> List[tuple]:
